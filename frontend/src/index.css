@@ -1,0 +1,7 @@
+html, body {
+  height: 100%;
+  margin: 0;
+  background-color: #6c757d; /* Bootstrap's .bg-secondary */
+  color: white;
+  font-family: sans-serif;
+}

@@ -1,0 +1,92 @@
+
+
+/* start of component styles */
+
+.bars-button:hover {
+    background-color: rgb(100, 100, 100);
+    transition: 0.15s;
+}
+  
+.bars-button:active {
+    background-color: rgb(100, 100, 100);
+}
+
+.side-container {
+    width: 300px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.search-box {
+    margin-top: 4%;
+    margin-bottom: 4%;
+    margin-left: 3%;
+}
+
+.offcanvas-body {
+    margin-top: -4%;
+}
+
+.offcanvas-section:hover {
+    background-color: rgb(100, 100, 100);
+    transition: 0.15s;
+}
+
+.chats-section {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.chat-preview {
+    width: 100%;
+    border-radius: 0 !important;
+    padding: 10px;
+    border: none;
+    flex-grow: 1;
+}
+
+.chat-preview:hover {
+    background-color: rgb(100, 100, 100);
+    transition: 0.15s;
+}
+
+.chat-body {
+    min-width: 0;
+}
+
+.chat-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    object-fit: cover; 
+    border: 1px solid rgba(255, 255, 255, 0.1); /* Optional subtle border */
+}
+
+.main-chat {
+    background-image: url("/images/wallpaperflare.com_wallpaper.jpg");
+    background-size: cover;
+    background-position: center;
+    overflow-y: auto;
+    width: 1233px;
+}
+
+
+.chat-message-recieved,
+.chat-message-sent {
+    max-width: 75%;
+    word-break: break-word;
+}
+
+.chat-message-recieved {
+    background-color: #8c8c8c;
+    align-self: flex-start;
+}
+
+.chat-message-sent {
+    background-color: #006c74;
+    align-self: flex-end;
+}
+
