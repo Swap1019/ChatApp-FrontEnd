@@ -25,6 +25,7 @@ A responsive frontend for a real-time chat platform.
 ---
 
 ## 📂 Project Structure
+[![User Flow](https://github.com/Swap1019/ChatApp-FrontEnd/blob/main/Userflow.png?raw=true)](https://www.canva.com/design/DAGvqaBqvus/C7bMfnR7PW79bhbhDBx5OA/view?utm_content=DAGvqaBqvus&utm_campaign=designshare&utm_medium=link2&utm_source=uniquelinks&utlId=h77567f25c6)
 
 
 
