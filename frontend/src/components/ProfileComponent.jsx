@@ -1,4 +1,4 @@
-import { ArrowLeft } from "react-bootstrap-icons";
+import { ArrowLeft, PersonCircle } from "react-bootstrap-icons";
 import "../styles/Base.css";
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
@@ -48,20 +48,16 @@ function ProfileComponent({ user, onSubmit }) {
         <div className="col-12 col-lg-4 p-3">
           <div className="card h-100 theme-light-gray p-3">
             <div className="text-center">
-              <img
-                src={
-                  profile instanceof File
-                    ? URL.createObjectURL(profile)
-                    : profile || "https://via.placeholder.com/150"
-                }
-                alt="avatar"
-                className="rounded-circle img-fluid"
-                style={{
-                  width: "150px",
-                  height: "150px",
-                  objectFit: "cover",
-                }}
-              />
+              {profile ? (
+                <img
+                  src={profile instanceof File ? URL.createObjectURL(profile) : profile}
+                  alt="avatar"
+                  className="rounded-circle img-fluid"
+                  style={{ width: "150px", height: "150px", objectFit: "cover" }}
+                />
+              ) : (
+                <PersonCircle size={150} />
+              )}
               <input
                 className="form-control form-control-sm mt-2"
                 id="formFileSm"

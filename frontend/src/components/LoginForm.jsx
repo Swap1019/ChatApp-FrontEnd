@@ -55,7 +55,7 @@ function Form({ route, method }) {
                 {name}
             </button>
             <Link to="/register">
-                <a>Don't have Account?</a>
+                <span>Don't have Account?</span>
             </Link>
         </form>
     );

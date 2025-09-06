@@ -3,7 +3,15 @@ import { Link } from "react-router-dom";
 import "../styles/Home.css";
 import "../styles/Base.css";
 
-function HomeComponent({user}) {
+function HomeComponent({user,conversations,messages}) {
+    function prettyDate(time) {
+            var date = new Date(time);
+            return date.toLocaleTimeString(navigator.language, {
+                hour: '2-digit',
+                minute:'2-digit',
+        });
+    }
+
     return (
         <div className="d-flex">
             <div className="theme-dark side-container">
@@ -30,7 +38,7 @@ function HomeComponent({user}) {
                         <Link to="/profile/" className="text-decoration-none text-white">
                             <div className="offcanvas-section p-2 rounded-4">
                                 {user && user.profile ? (
-                                    <img className="rounded-circle" src={user.profile} width="45" height="45" />
+                                    <img className="rounded-circle" src={`${import.meta.env.VITE_API_URL}${user?.profile}`} width="45" height="45" />
                                 ) : (
                                     <PersonCircle size={35} />
                                 )}
@@ -50,43 +58,59 @@ function HomeComponent({user}) {
                 {/* Chats section */}
                 <div className="overflow-auto text-white chats-section theme-dark">
                     <div className="list-group">
-                        <a href="#" className="list-group-item d-flex align-items-start chat-preview theme-gray">
+                        {conversations?.map((conversation) => (
+                        <Link
+                            to={conversation?.id}
+                            key={conversation?.id}
+                            className="list-group-item d-flex align-items-start chat-preview theme-gray"
+                        >
                             <img src="https://avatars.githubusercontent.com/u/120246081?v=4" className="chat-avatar me-3" />
                             <div className="d-flex flex-column justify-content-between flex-grow-1 chat-body">
                                 <div className="d-flex justify-content-between">
-                                    <div className="fw-bold">John Doe</div>
-                                    <div className="text-white small">12:45</div>
+                                    <div className="fw-bold">{conversation?.name}</div>
+                                    <div className="text-white small"></div>
                                 </div>
-                                <div className="text-white small">Last message preview text...</div>
                             </div>
-                        </a>
+                        </Link>
+                        ))}
                     </div>
                 </div>
             </div>
 
             {/* Main chat */}
-            <div className="flex-grow-1 text-white bg-secondary main-chat d-flex flex-column p-3">
-                <div className="d-flex align-items-start rounded-4 p-2 mb-2 chat-message-recieved">
-                    <img src="https://avatars.githubusercontent.com/u/120246081?v=4" className="chat-avatar me-3" />
-                    <div className="d-flex flex-column">
-                        <div className="d-flex justify-content-between">
-                            <div className="fw-bold">Kian</div>
-                            <div className="text-white-50 small ms-3">12:30PM</div>
+            <div className="flex-grow-1 text-white bg-secondary main-chat d-flex flex-column p-3" style={{backgroundImage: `url(${import.meta.env.VITE_API_URL}${user?.background_image})`,}}>
+                {messages?.map((message) => (
+                    user.id === message.sender.id ? 
+                    <div className="d-flex align-items-start rounded-4 p-2 mb-2 chat-message-sent">
+                        {message.sender.profile ? (
+                                    <img src={`${import.meta.env.VITE_API_URL}${message.sender.profile}`} className="chat-avatar me-3" />
+                                ) : (
+                                <PersonCircle size={35} />
+                        )}
+                        <div className="d-flex flex-column">
+                            <div className="d-flex justify-content-between">
+                                <div className="fw-bold">{message?.sender.nickname}</div>
+                                <div className="text-white-50 small ms-3">{prettyDate(message?.created_at)}</div>
+                            </div>
+                            <div>{message?.content}</div>
                         </div>
-                        <div>How do you do?</div>
                     </div>
-                </div>
-
-                <div className="d-flex align-items-start rounded-4 p-2 mb-2 chat-message-sent">
-                    <div className="d-flex flex-column">
-                        <div className="d-flex justify-content-between">
-                            <div className="text-white-50 small me-3">12:30PM</div>
-                            <div className="fw-bold">You</div>
+                    :
+                    <div className="d-flex align-items-start rounded-4 p-2 mb-2 chat-message-recieved">
+                        <div className="d-flex flex-column">
+                            <div className="d-flex justify-content-between">
+                                <div className="text-white-50 small me-3">{prettyDate(message?.created_at)}</div>
+                                <div className="fw-bold">{message?.sender.nickname}</div>
+                            </div>
+                            <div>{message?.content}</div>
                         </div>
-                        <div>How do you do?</div>
+                        {message.sender.profile ? (
+                            <img src={`${import.meta.env.VITE_API_URL}${message.sender.profile}`} className="chat-avatar ms-3" />
+                        ) : (
+                        <PersonCircle size={35} />
+                        )}
                     </div>
-                    <img src="https://avatars.githubusercontent.com/u/120246081?v=4" className="chat-avatar ms-3" />
-                </div>
+                ))}
             </div>
         </div>
     );
