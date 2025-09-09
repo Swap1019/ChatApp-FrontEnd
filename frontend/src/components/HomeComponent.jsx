@@ -1,9 +1,14 @@
-import { Gear, PersonCircle } from 'react-bootstrap-icons';
+import { Gear, PersonCircle, Send } from 'react-bootstrap-icons';
 import { Link } from "react-router-dom";
+import { useState, useEffect, useRef } from "react";
 import "../styles/Home.css";
 import "../styles/Base.css";
 
-function HomeComponent({user,conversations,messages}) {
+function HomeComponent({user,conversations,messages,uuid,onSubmit}) {
+    const [content, setContent] = useState("");
+    const messagesEndRef = useRef(null);
+
+
     function prettyDate(time) {
             var date = new Date(time);
             return date.toLocaleTimeString(navigator.language, {
@@ -11,6 +16,13 @@ function HomeComponent({user,conversations,messages}) {
                 minute:'2-digit',
         });
     }
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    };
+
+    useEffect(() => {
+        scrollToBottom();
+    }, [messages]);
 
     return (
         <div className="d-flex">
@@ -38,7 +50,7 @@ function HomeComponent({user,conversations,messages}) {
                         <Link to="/profile/" className="text-decoration-none text-white">
                             <div className="offcanvas-section p-2 rounded-4">
                                 {user && user.profile ? (
-                                    <img className="rounded-circle" src={`${import.meta.env.VITE_API_URL}${user?.profile}`} width="45" height="45" />
+                                    <img className="rounded-circle" src={user?.profile} width="45" height="45" />
                                 ) : (
                                     <PersonCircle size={35} />
                                 )}
@@ -78,12 +90,14 @@ function HomeComponent({user,conversations,messages}) {
             </div>
 
             {/* Main chat */}
-            <div className="flex-grow-1 text-white bg-secondary main-chat d-flex flex-column p-3" style={{backgroundImage: `url(${import.meta.env.VITE_API_URL}${user?.background_image})`,}}>
+            <div className="flex-grow-1 text-white bg-secondary main-chat d-flex flex-column p-3" 
+                style={{ backgroundImage: `url(${user?.background_image})` }}
+            >
                 {messages?.map((message) => (
                     user.id === message.sender.id ? 
                     <div className="d-flex align-items-start rounded-4 p-2 mb-2 chat-message-sent">
                         {message.sender.profile ? (
-                                    <img src={`${import.meta.env.VITE_API_URL}${message.sender.profile}`} className="chat-avatar me-3" />
+                                    <img src={message.sender.profile} className="chat-avatar me-3" />
                                 ) : (
                                 <PersonCircle size={35} />
                         )}
@@ -105,14 +119,38 @@ function HomeComponent({user,conversations,messages}) {
                             <div>{message?.content}</div>
                         </div>
                         {message.sender.profile ? (
-                            <img src={`${import.meta.env.VITE_API_URL}${message.sender.profile}`} className="chat-avatar ms-3" />
+                            <img src={message.sender.profile} className="chat-avatar ms-3" />
                         ) : (
                         <PersonCircle size={35} />
                         )}
                     </div>
                 ))}
+                <div className="mt-5">
+                    <form className="chat-input-container d-flex" onSubmit={(e) => {
+                            e.preventDefault();
+                            onSubmit({
+                                conversation: uuid,
+                                sender: user.id,
+                                content: content,
+                                created_at:new Date().toISOString(),
+                                is_read: false,
+                            });
+                            setContent("");
+                        }}>
+                        <textarea className="chat-textbox theme-gray" rows="1"
+                            value={content} 
+                            onChange={(e) => setContent(e.target.value)}
+                            >
+                        </textarea>
+                        <button type="submit" className="send-icon-button">
+                            <Send size={25} className="send-icon" />
+                        </button>
+                    </form>
+                </div>
+                <div ref={messagesEndRef} />
             </div>
         </div>
+
     );
 }
 

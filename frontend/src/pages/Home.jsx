@@ -3,6 +3,8 @@ import HomeComponent from "../components/HomeComponent";
 import { useParams } from "react-router-dom";
 import api from "../api"; 
 
+
+
 function Home() {
     const [user, setUser] = useState(null);
     const [conversations, setConversations] = useState();
@@ -17,8 +19,8 @@ function Home() {
         fetchmessages(); 
     }, [uuid]);
 
-    const fetchdata = () => {
-        api
+    const fetchdata = async () => {
+        await api
             .get("/chat/")
             .then((res) => res.data)
             .then((data) => {
@@ -29,9 +31,9 @@ function Home() {
             .catch((err) => alert(err));
     };
 
-    const fetchmessages = () => {
+    const fetchmessages = async () => {
         if (uuid) {
-            api
+            await api
                 .get(`/chat/${uuid}/`)
                 .then((res) => res.data)
                 .then((data) => {
@@ -42,9 +44,19 @@ function Home() {
         }
     }
 
+    const handleSubmit = async (data) => {
+            try {
+                const res = await api.post("chat/message/create/", data);
+                setMessages((prev) => [...prev, res.data]);
+            } catch (err) {
+                console.error("Error sending message:", err);
+                alert("Failed to send message");
+            }
+    }
+
     return (
         <div>
-            <HomeComponent user={user} conversations={conversations} messages={messages} />
+            <HomeComponent user={user} conversations={conversations} messages={messages} uuid={uuid} onSubmit={handleSubmit} />
         </div>
     );
 }

@@ -38,7 +38,10 @@
     display: flex;
     flex-direction: column;
     height: 100%;
+    overflow-y: auto;     /* scroll only this area */
+    overflow-x: hidden;
 }
+
 
 .chat-preview {
     width: 100%;
@@ -66,10 +69,16 @@
 }
 
 .main-chat {
+    flex: 1;
+    width: 1233px;
+    height: 100vh;
+    overflow: auto;
+    overflow-y: auto;
     background-size: cover;
     background-position: center;
-    overflow-y: auto;
-    width: 1233px;
+    scroll-behavior: auto;
+    white-space: normal;  
+    flex-direction: column-reverse;
 }
 
 
@@ -89,3 +98,50 @@
     align-self: flex-end;
 }
 
+.chat-input-container {
+  position: fixed;
+  bottom: 0;
+  left: 300px; /* matches your side-container width */
+  width: calc(100% - 300px); /* take up the rest of the width */
+  display: flex;
+  align-items: center;
+  padding: 8px;
+  background-color: rgb(60, 60, 60);
+}
+
+.chat-textbox {
+  flex-grow: 1;
+  resize: none;
+  padding: 10px 40px 10px 10px; /* extra right padding for the icon */
+  border: none;
+  border-radius: 8px;
+  background-color: rgb(60, 60, 60);
+  color: white;
+}
+
+.chat-textbox:focus {
+  outline: none;
+}
+
+.send-icon {
+  position: absolute;
+  right: 20px;
+  bottom: 16px;
+  cursor: pointer;
+  color: white;
+  margin-bottom: 2px;
+}
+
+.send-icon-button {
+  position: absolute;
+  right: 0px;
+  bottom: 0px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.send-icon-button:focus {
+  outline: none;
+}
