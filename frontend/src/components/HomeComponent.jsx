@@ -4,8 +4,10 @@ import { useState, useEffect, useRef } from "react";
 import "../styles/Home.css";
 import "../styles/Base.css";
 
-function HomeComponent({user,conversations,messages,uuid,onSubmit}) {
+function HomeComponent({user,conversations,messages,uuid}) {
     const [content, setContent] = useState("");
+    const [socket, setSocket] = useState("");
+    const [liveMessage, setLiveMessage] = useState(messages || []);
     const messagesEndRef = useRef(null);
 
 
@@ -20,9 +22,57 @@ function HomeComponent({user,conversations,messages,uuid,onSubmit}) {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     };
 
+    const sendMessage = () => {
+        if (!content.trim()) return;
+
+        const msg = {
+            text: content
+        };
+
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify(msg));
+        }
+    }
+
     useEffect(() => {
         scrollToBottom();
     }, [messages]);
+
+    useEffect(() =>{
+        setLiveMessage(messages || [])
+    }, [messages]);
+
+    useEffect(() => {
+        if (!uuid) return;
+
+        const token = localStorage.getItem("access");
+        const ws = new WebSocket(`ws://127.0.0.1:8000/chat/${uuid}/?token=${token}`);
+
+        ws.onopen = () => {
+            console.log("Websocket opened");
+        };
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.message) {
+                setLiveMessage((prev) => [...prev, data.message]);
+            }
+        };
+
+        ws.onclose = () => {
+            console.log("Websocket closed");
+        };
+
+        setSocket(ws);
+
+        return () => ws.close();
+    }, [uuid]);
+
+
+
+    useEffect(() => {
+        scrollToBottom();
+    }, [liveMessage]);
 
     return (
         <div className="d-flex">
@@ -93,7 +143,7 @@ function HomeComponent({user,conversations,messages,uuid,onSubmit}) {
             <div className="flex-grow-1 text-white bg-secondary main-chat d-flex flex-column p-3" 
                 style={{ backgroundImage: `url(${user?.background_image})` }}
             >
-                {messages?.map((message) => (
+                {liveMessage?.map((message) => (
                     user.id === message.sender.id ? 
                     <div className="d-flex align-items-start rounded-4 p-2 mb-2 chat-message-sent">
                         {message.sender.profile ? (
@@ -128,13 +178,7 @@ function HomeComponent({user,conversations,messages,uuid,onSubmit}) {
                 <div className="mt-5">
                     <form className="chat-input-container d-flex" onSubmit={(e) => {
                             e.preventDefault();
-                            onSubmit({
-                                conversation: uuid,
-                                sender: user.id,
-                                content: content,
-                                created_at:new Date().toISOString(),
-                                is_read: false,
-                            });
+                            sendMessage();
                             setContent("");
                         }}>
                         <textarea className="chat-textbox theme-gray" rows="1"
