@@ -55,9 +55,7 @@ function Home() {
     }
 
     return (
-        <div>
-            <HomeComponent user={user} conversations={conversations} messages={messages} uuid={uuid} onSubmit={handleSubmit} />
-        </div>
+        <HomeComponent user={user} conversations={conversations} messages={messages} uuid={uuid} onSubmit={handleSubmit} /> 
     );
 }
 
