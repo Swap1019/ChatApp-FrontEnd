@@ -18,6 +18,9 @@ body {
 font-family: Arial, sans-serif;
 color: var(--text-color);
 background-color: var(--bg-color);
+height: 100dvh;
+width: 100vw;
+overflow: hidden;
 }
 
 .chat-container {

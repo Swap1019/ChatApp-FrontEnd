@@ -11,53 +11,57 @@ function Form({ route, method }) {
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
 
-    const name = method === "login" ? "Login" : "Register";
-
     const handleSubmit = async (e) => {
         setLoading(true);
         e.preventDefault();
 
         try {
             const res = await api.post(route, { username, password })
-            if (method === "login") {
-                localStorage.setItem(ACCESS_TOKEN, res.data.access);
-                localStorage.setItem(REFRESH_TOKEN, res.data.refresh);
-                navigate("/")
-            } else {
-                navigate("/user/login/")
-            }
+            localStorage.setItem(ACCESS_TOKEN, res.data.access);
+            localStorage.setItem(REFRESH_TOKEN, res.data.refresh);
+            navigate("/")
         } catch (error) {
-            alert(error)
+            alert("Username or password is wrong")        
         } finally {
             setLoading(false)
         }
     };
 
     return (
-        <form onSubmit={handleSubmit} className="form-container">
-            <h1>{name}</h1>
-            <input
-                className="form-input"
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Username"
-            />
-            <input
-                className="form-input"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Password"
-            />
-            {loading && <LoadingIndicator />}
-            <button className="form-button" type="submit">
-                {name}
-            </button>
-            <Link to="/register">
-                <span>Don't have Account?</span>
-            </Link>
-        </form>
+        <div className="form-container">
+            <h2>Login</h2>
+            <form id="multiStepForm" onSubmit={handleSubmit}>
+                <div className="form-group">
+                    <label for="username">Username</label>
+                    <input 
+                        type="text"
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)} 
+                        id="username" 
+                        required
+                    />
+                </div>
+                <div className="form-group">
+                    <label for="password">Password</label>
+                    <input 
+                        type="text"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)} 
+                        id="password" 
+                        required
+                    />
+                </div>
+                {loading && <LoadingIndicator />}
+                <button type="submit" className="btn btn-primary">
+                    Login
+                </button>
+                <div className="bottom-link">
+                    <Link to="/register">
+                        <span>Don't have an account?</span>
+                    </Link>
+                </div>
+            </form>
+        </div>
     );
 }
 

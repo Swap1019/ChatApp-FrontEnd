@@ -17,6 +17,18 @@ function Register() {
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
 
+    const step1 = document.getElementById('step1');
+    const step2 = document.getElementById('step2');
+
+    function nextStep() {
+      step1.classList.remove('active');
+      step2.classList.add('active');
+    }
+    function prevStep() {
+      step2.classList.remove('active');
+      step1.classList.add('active');
+    }
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (password !== confirmPassword) {
@@ -47,72 +59,105 @@ function Register() {
     };
 
     return (
-        <div className="form-page">
-            <form onSubmit={handleSubmit} className="form-container">
-                <h1>Create an Account</h1>
-                <input
-                    className="form-input"
-                    type="text"
-                    value={userName}
-                    onChange={(e) => setUserName(e.target.value)}
-                    placeholder="Username"
-                    required
-                />
-                <input
-                    className="form-input"
-                    type="text"
-                    value={nickName}
-                    onChange={(e) => setNickName(e.target.value)}
-                    placeholder="Nick Name"
-                    required
-                />
-                <input
-                    className="form-input"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="Email"
-                    required
-                />
-                <input
-                    className="form-input"
-                    type="text"
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                    placeholder="First Name"
-                    required
-                />
-                <input
-                    className="form-input"
-                    type="text"
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                    placeholder="Last Name"
-                    required
-                />
-                <input
-                    className="form-input"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Password"
-                    required
-                />
-                <input
-                    className="form-input"
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Confirm Password"
-                    required
-                />
-                {loading && <LoadingIndicator />}
-                <button className="form-button" type="submit">
-                    Register
-                </button>
-                <Link to="/login">
-                    <span>Have an account?</span>
-                </Link>
+        <div className="form-container">
+            <form id="multiStepForm" onSubmit={handleSubmit}>
+                {/* Step 1 */}
+                <div className="form-step active" id="step1" >
+                    <h2>Register</h2>
+                    <div className="form-group">
+                        <label htmlFor="firstname">First Name</label>
+                        <input 
+                            type="text"
+                            value={firstName}
+                            onChange={(e) => setFirstName(e.target.value)} 
+                            id="firstname"
+                            placeholder="Optional"
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label htmlFor="lastname">Last Name</label>
+                        <input 
+                            type="text"
+                            value={lastName}
+                            onChange={(e) => setLastName(e.target.value)} 
+                            id="lastname" 
+                            placeholder="Optional"
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label htmlFor="nickname">Nickname</label>
+                        <input 
+                            type="text"
+                            value={nickName}
+                            onChange={(e) => setNickName(e.target.value)} 
+                            id="nickname" 
+                            required
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label htmlFor="username">Username</label>
+                        <input 
+                            type="text"
+                            value={userName}
+                            onChange={(e) => setUserName(e.target.value)} 
+                            id="username" 
+                            required
+                        />
+                    </div>
+                    <button type="button" className="btn btn-primary" onClick={nextStep}>Next</button>
+                        <div className="bottom-link">
+                        <Link to="/login">
+                            <span>Have an account?</span>
+                        </Link>
+                    </div>
+                </div>
+
+                {/* Step 2 */}
+                <div className="form-step" id="step2">
+                    <button type="button" className="back-btn" onClick={prevStep}>
+                        <i className="fa-solid fa-arrow-left"></i>
+                    </button>
+                    <h2>Step 2</h2>
+                    <div className="form-group">
+                        <label htmlFor="email">Email</label>
+                        <input 
+                            type="text"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)} 
+                            id="email" 
+                            required
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label htmlFor="password">Password</label>
+                        <input 
+                            type="text"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)} 
+                            id="password" 
+                            required
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label htmlFor="confirm">Confirm Password</label>
+                        <input 
+                            type="text"
+                            value={confirmPassword}
+                            onChange={(e) => setConfirmPassword(e.target.value)} 
+                            id="confirmpassword" 
+                            required
+                        />
+                    </div>
+                    {loading && <LoadingIndicator />}
+                    <button type="submit" className="btn btn-primary">
+                        Register
+                    </button>
+                    <div className="bottom-link">
+                        <Link to="/login">
+                            <span>Have an account?</span>
+                        </Link>
+                    </div>
+                </div>
             </form>
         </div>
     );
