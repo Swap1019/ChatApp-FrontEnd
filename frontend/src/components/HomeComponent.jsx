@@ -23,7 +23,7 @@ function HomeComponent({user,conversations,messages,uuid}) {
     function openChat(name, imgSrc) {
         document.getElementById('chatName').innerText = name;
         document.getElementById('chatHeaderImg').src = imgSrc;
-
+    
         if (window.innerWidth <= 768) {
         document.getElementById('chatContent').classList.add('show');
         document.getElementById('sidebar').style.display = 'none';
@@ -109,13 +109,9 @@ function HomeComponent({user,conversations,messages,uuid}) {
                     to={conversation?.id}
                     key={conversation?.id}
                     className="list-group-item chat-item"
-                    onClick={() => openChat(conversation?.name, 'https://i.pravatar.cc/40?img=1')}
-                    >
-                    {conversation.profile ? (
-                        <img src={conversation.profile} className="avatar" />
-                    ) : (
-                        <PersonCircle size={35} />
-                    )}
+                    onClick={() => openChat(conversation?.name, conversation?.profile)}
+                    >(
+                    <img src={conversation.profile} className="avatar" />
                     <span>{conversation?.name}</span>
                     </Link>
                 ) : (
@@ -123,13 +119,9 @@ function HomeComponent({user,conversations,messages,uuid}) {
                     key={conversation?.id}
                     className="list-group-item chat-item"
                     style={{width:"100%"}}
-                    onClick={() => openChat(conversation?.name, 'https://i.pravatar.cc/40?img=1')}
+                    onClick={() => openChat(conversation?.name, conversation?.profile)}
                     >
-                    {conversation.profile ? (
-                        <img src={conversation.profile} className="avatar" />
-                    ) : (
-                        <PersonCircle size={35} />
-                    )}
+                    <img src={conversation.profile} className="avatar" />
                     <span>{conversation?.name}</span>
                     </button>
                 )
@@ -141,7 +133,7 @@ function HomeComponent({user,conversations,messages,uuid}) {
             <div className="chat-content" id="chatContent" style={{ backgroundImage: `url(${user?.background_image})`}}>
                 <div className="chat-header">
                     <button id="backBtn" onClick={backToChats}>←</button>
-                    <img src="https://i.pravatar.cc/40?img=1" alt="Profile" id="chatHeaderImg" />
+                    <img src="" alt="Profile" id="chatHeaderImg" />
                     <span id="chatName">Chat Name</span>
                 </div>
                 <div className="messages">
