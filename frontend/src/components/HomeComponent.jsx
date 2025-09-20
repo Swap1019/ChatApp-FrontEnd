@@ -111,7 +111,11 @@ function HomeComponent({user,conversations,messages,uuid}) {
                     className="list-group-item chat-item"
                     onClick={() => openChat(conversation?.name, 'https://i.pravatar.cc/40?img=1')}
                     >
-                    <img src="https://i.pravatar.cc/40?img=1" alt="Profile" />
+                    {conversation.profile ? (
+                        <img src={conversation.profile} className="avatar" />
+                    ) : (
+                        <PersonCircle size={35} />
+                    )}
                     <span>{conversation?.name}</span>
                     </Link>
                 ) : (
@@ -121,7 +125,11 @@ function HomeComponent({user,conversations,messages,uuid}) {
                     style={{width:"100%"}}
                     onClick={() => openChat(conversation?.name, 'https://i.pravatar.cc/40?img=1')}
                     >
-                    <img src="https://i.pravatar.cc/40?img=1" alt="Profile" />
+                    {conversation.profile ? (
+                        <img src={conversation.profile} className="avatar" />
+                    ) : (
+                        <PersonCircle size={35} />
+                    )}
                     <span>{conversation?.name}</span>
                     </button>
                 )

@@ -4,6 +4,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { ACCESS_TOKEN, REFRESH_TOKEN } from "../constants";
 import "../styles/Form.css"
 import LoadingIndicator from "./LoadingIndicator";
+import { EmojiSurprise } from "react-bootstrap-icons";
 
 function Form({ route, method }) {
     const [username, setUsername] = useState("");
@@ -21,7 +22,7 @@ function Form({ route, method }) {
             localStorage.setItem(REFRESH_TOKEN, res.data.refresh);
             navigate("/")
         } catch (error) {
-            alert("Username or password is wrong")        
+            alert(error)        
         } finally {
             setLoading(false)
         }
