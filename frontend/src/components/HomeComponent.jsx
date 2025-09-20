@@ -4,6 +4,7 @@ import React from 'react';
 import { useState, useEffect, useRef } from "react";
 import "../styles/Home.css";
 import "../styles/Base.css";
+import.meta.env.VITE_API_URL
 
 function HomeComponent({user,conversations,messages,uuid}) {
     const [content, setContent] = useState("");
@@ -70,7 +71,7 @@ function HomeComponent({user,conversations,messages,uuid}) {
         if (!uuid) return;
 
         const token = localStorage.getItem("access");
-        const ws = new WebSocket(`ws://127.0.0.1:8000/chat/${uuid}/?token=${token}`);
+        const ws = new WebSocket(`ws://${VITE_API_URL}/chat/${uuid}/?token=${token}`);
 
         ws.onopen = () => {
             console.log("Websocket opened");
@@ -106,12 +107,12 @@ function HomeComponent({user,conversations,messages,uuid}) {
                 {conversations?.map((conversation) => (
                     conversation?.id !== uuid ? (
                     <Link
-                    to={conversation?.id}
+                    to={`/${conversation?.id}`}
                     key={conversation?.id}
                     className="list-group-item chat-item"
-                    onClick={() => openChat(conversation?.name, conversation?.profile)}
-                    >(
-                    <img src={conversation.profile} className="avatar" />
+                    onClick={() => openChat(conversation?.name,conversation?.profile)}
+                    >
+                    <img src={conversation.profile} />
                     <span>{conversation?.name}</span>
                     </Link>
                 ) : (
@@ -130,12 +131,16 @@ function HomeComponent({user,conversations,messages,uuid}) {
             </div>
 
             {/* Chat content */}
-            <div className="chat-content" id="chatContent" style={{ backgroundImage: `url(${user?.background_image})`}}>
+            <div className="chat-content" id="chatContent" style={{ backgroundImage: `url(${user?.background_image ? user.background_image : "https://res.cloudinary.com/dwfngrwoe/image/upload/v1758392790/default_hgh8gm.webp"})`}}>
+                {uuid ? 
                 <div className="chat-header">
                     <button id="backBtn" onClick={backToChats}>←</button>
                     <img src="" alt="Profile" id="chatHeaderImg" />
                     <span id="chatName">Chat Name</span>
                 </div>
+                :
+                <div/>
+                }
                 <div className="messages">
                     {liveMessage?.map((message) => (
                         user.id === message.sender.id ?
@@ -143,7 +148,7 @@ function HomeComponent({user,conversations,messages,uuid}) {
                                 {message.sender.profile ? (
                                     <img src={message.sender.profile} className="avatar" />
                                 ) : (
-                                    <PersonCircle size={35} />
+                                    <PersonCircle className="avatar" />
                                 )}
                                 <div className="message-bubble">
                                     <div className="message-header">
