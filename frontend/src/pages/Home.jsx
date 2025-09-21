@@ -21,7 +21,7 @@ function Home() {
 
     const fetchdata = async () => {
         await api
-            .get("/chat/")
+            .get("/chat/",{ withCredentials: true })
             .then((res) => res.data)
             .then((data) => {
                 setUser(data.user);
