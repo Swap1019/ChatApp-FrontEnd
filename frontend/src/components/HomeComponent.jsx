@@ -14,7 +14,9 @@ function HomeComponent({user,conversations,messages,uuid}) {
     const navigate = useNavigate();
 
     const handleChatClick = (conversation) => {
-        openChat(conversation?.name, conversation?.profile);
+        setChatName(conversation?.name || "");
+        setChatImg(conversation?.profile || "");
+        openChat();
         navigate(`/${conversation?.id}`);
     };
 
@@ -27,10 +29,7 @@ function HomeComponent({user,conversations,messages,uuid}) {
         });
     }
 
-    function openChat(name, imgSrc) {
-        document.getElementById('chatName').innerText = name;
-        document.getElementById('chatHeaderImg').src = imgSrc;
-
+    function openChat() {
         if (window.innerWidth <= 768) {
             document.getElementById('chatContent').classList.add('show');
             document.getElementById('sidebar').classList.add('hide');
@@ -137,8 +136,8 @@ function HomeComponent({user,conversations,messages,uuid}) {
                 {uuid ? 
                 <div className="chat-header">
                     <button id="backBtn" onClick={backToChats}>←</button>
-                    <img src="" alt="Profile" id="chatHeaderImg" />
-                    <span id="chatName">Chat Name</span>
+                    <img src={chatImg} alt="Profile" id="chatHeaderImg" />
+                    <span id="chatName">{chatName}</span>
                 </div>
                 :
                 <div/>
