@@ -9,6 +9,8 @@ import "../styles/Base.css";
 function HomeComponent({user,conversations,messages,uuid}) {
     const [content, setContent] = useState("");
     const [socket, setSocket] = useState("");
+    const [chatName, setChatName] = useState("");
+    const [chatImg, setChatImg] = useState(null);
     const [liveMessage, setLiveMessage] = useState(messages || []);
     const messagesEndRef = useRef(null);
     const navigate = useNavigate();
@@ -85,7 +87,7 @@ function HomeComponent({user,conversations,messages,uuid}) {
         if (!uuid) return;
 
         const token = localStorage.getItem("access");
-        const ws = new WebSocket(`${import.meta.env.VITE_API_URL}`);
+        const ws = new WebSocket(`wss://${import.meta.env.VITE_API_URL}/chat/${uuid}/?token=${token}`);
 
         ws.onopen = () => {
             console.log("Websocket opened");
