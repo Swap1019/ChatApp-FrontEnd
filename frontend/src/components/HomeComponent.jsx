@@ -115,7 +115,7 @@ function HomeComponent({user,conversations,messages,uuid}) {
                 {conversations?.map((conversation) => (
                     conversation?.id !== uuid ? (
                     <Link
-                    to={`/${conversation?.id}`}
+                    to={uuid ? `/${conversation?.id}` : `${conversation?.id}` }
                     key={conversation?.id}
                     className="list-group-item chat-item"
                     onClick={() => openChat(conversation?.name,conversation?.profile)}
