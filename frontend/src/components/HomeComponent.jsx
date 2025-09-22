@@ -86,7 +86,7 @@ function HomeComponent({user,conversations,messages,uuid}) {
         if (!uuid) return;
 
         const token = localStorage.getItem("access");
-        const ws = new WebSocket(`wss://${import.meta.env.VITE_API_URL}/chat/${uuid}/?token=${token}`);
+        const ws = new WebSocket(`${import.meta.env.VITE_API_URL}`);
 
         ws.onopen = () => {
             console.log("Websocket opened");
