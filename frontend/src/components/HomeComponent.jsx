@@ -9,12 +9,16 @@ import "../styles/Base.css";
 function HomeComponent({user,conversations,messages,uuid}) {
     const [content, setContent] = useState("");
     const [socket, setSocket] = useState("");
+    const [chatName, setChatName] = useState("");
+    const [chatImg, setChatImg] = useState(null);
     const [liveMessage, setLiveMessage] = useState(messages || []);
     const messagesEndRef = useRef(null);
     const navigate = useNavigate();
 
     const handleChatClick = (conversation) => {
-        openChat(conversation?.name, conversation?.profile);
+        setChatName(conversation?.name || "");
+        setChatImg(conversation?.profile || "");
+        openChat();
         navigate(`/${conversation?.id}`);
     };
 
@@ -27,10 +31,7 @@ function HomeComponent({user,conversations,messages,uuid}) {
         });
     }
 
-    function openChat(name, imgSrc) {
-        document.getElementById('chatName').innerText = name;
-        document.getElementById('chatHeaderImg').src = imgSrc;
-
+    function openChat() {
         if (window.innerWidth <= 768) {
             document.getElementById('chatContent').classList.add('show');
             document.getElementById('sidebar').classList.add('hide');
@@ -86,7 +87,7 @@ function HomeComponent({user,conversations,messages,uuid}) {
         if (!uuid) return;
 
         const token = localStorage.getItem("access");
-        const ws = new WebSocket(`ws://${import.meta.env.VITE_API_URL}/chat/${uuid}/?token=${token}`);
+        const ws = new WebSocket(`wss://127.0.0.1:8000/chat/${uuid}/?token=${token}`);
 
         ws.onopen = () => {
             console.log("Websocket opened");
@@ -137,8 +138,8 @@ function HomeComponent({user,conversations,messages,uuid}) {
                 {uuid ? 
                 <div className="chat-header">
                     <button id="backBtn" onClick={backToChats}>←</button>
-                    <img src="" alt="Profile" id="chatHeaderImg" />
-                    <span id="chatName">Chat Name</span>
+                    <img src={chatImg} alt="Profile" id="chatHeaderImg" />
+                    <span id="chatName">{chatName}</span>
                 </div>
                 :
                 <div/>
