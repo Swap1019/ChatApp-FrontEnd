@@ -32,7 +32,7 @@ function Home() {
     };
 
     const fetchmessages = async () => {
-        if (uuid) {
+        if (uuid && user) {
             await api
                 .get(`/chat/${uuid}/`)
                 .then((res) => res.data)
