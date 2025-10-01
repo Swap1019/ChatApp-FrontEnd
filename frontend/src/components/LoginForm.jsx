@@ -4,11 +4,12 @@ import { useNavigate, Link } from "react-router-dom";
 import { ACCESS_TOKEN, REFRESH_TOKEN } from "../constants";
 import "../styles/Form.css"
 import LoadingIndicator from "./LoadingIndicator";
-import { EmojiSurprise } from "react-bootstrap-icons";
+import { Eye, EyeSlash } from "react-bootstrap-icons";
 
 function Form({ route, method }) {
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
+    const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
 
@@ -42,18 +43,32 @@ function Form({ route, method }) {
                         required
                     />
                 </div>
-                <div className="form-group">
-                    <label for="password">Password</label>
+                <div className="form-password" style={{ position: "relative" }}>
+                    <label for="password">Password </label>
                     <input 
-                        type="text"
+                        className="password"
+                        type={showPassword ? "text" : "password"}
                         value={password}
                         onChange={(e) => setPassword(e.target.value)} 
                         id="password" 
                         required
                     />
+                    <span
+                        onClick={() => setShowPassword(!showPassword)}
+                        style={{
+                            position: "absolute",
+                            right: "10px",
+                            top: "65%",
+                            transform: "translateY(-50%)",
+                            cursor: "pointer"
+                        }}
+                    >
+                        {showPassword ? <EyeSlash style={{width: "20px" , height: "20px"}} /> : <Eye style={{width: "20px" , height: "20px"}} />}
+                    </span>
                 </div>
+
                 {loading && <LoadingIndicator />}
-                <button type="submit" className="btn btn-primary">
+                <button type="submit" className="btn btn-primary mt-3">
                     Login
                 </button>
                 <div className="bottom-link">
