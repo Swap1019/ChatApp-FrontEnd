@@ -4,6 +4,7 @@ import { useNavigate, Link } from "react-router-dom";
 import api from "../api";
 import "../styles/Form.css";
 import LoadingIndicator from "../components/LoadingIndicator";
+import { Eye, EyeSlash } from "react-bootstrap-icons";
 
 function Register() {
     const [userName, setUserName] = useState("");
@@ -14,6 +15,9 @@ function Register() {
     const [password, setPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
     const [loading, setLoading] = useState(false);
+
+    const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const navigate = useNavigate();
 
     const step1 = document.getElementById('step1');
@@ -127,25 +131,58 @@ function Register() {
                             required
                         />
                     </div>
-                    <div className="form-group">
+                    <div className="form-group" style={{ position: "relative" }}>
                         <label htmlFor="password">Password</label>
-                        <input 
-                            type="text"
+                        <input
+                            type={showPassword ? "text" : "password"}
                             value={password}
-                            onChange={(e) => setPassword(e.target.value)} 
-                            id="password" 
+                            onChange={(e) => setPassword(e.target.value)}
+                            id="password"
                             required
                         />
+                        <span
+                            onClick={() => setShowPassword(!showPassword)}
+                            style={{
+                                position: "absolute",
+                                right: "10px",
+                                top: "65%",
+                                transform: "translateY(-50%)",
+                                cursor: "pointer",
+                            }}
+                        >
+                            {showPassword ? (
+                                <EyeSlash style={{ width: "20px", height: "20px" }} />
+                            ) : (
+                                <Eye style={{ width: "20px", height: "20px" }} />
+                            )}
+                        </span>
                     </div>
-                    <div className="form-group">
+                    
+                    <div className="form-group" style={{ position: "relative" }}>
                         <label htmlFor="confirm">Confirm Password</label>
-                        <input 
-                            type="text"
+                        <input
+                            type={showConfirmPassword ? "text" : "password"}
                             value={confirmPassword}
-                            onChange={(e) => setConfirmPassword(e.target.value)} 
-                            id="confirmpassword" 
+                            onChange={(e) => setConfirmPassword(e.target.value)}
+                            id="confirmpassword"
                             required
                         />
+                        <span
+                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                            style={{
+                                position: "absolute",
+                                right: "10px",
+                                top: "65%",
+                                transform: "translateY(-50%)",
+                                cursor: "pointer",
+                            }}
+                        >
+                            {showConfirmPassword ? (
+                                <EyeSlash style={{ width: "20px", height: "20px" }} />
+                            ) : (
+                                <Eye style={{ width: "20px", height: "20px" }} />
+                            )}
+                        </span>
                     </div>
                     {loading && <LoadingIndicator />}
                     <button type="submit" className="btn btn-primary">

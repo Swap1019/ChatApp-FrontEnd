@@ -1,4 +1,4 @@
-import { Gear, PersonCircle, Send, ArrowLeft } from 'react-bootstrap-icons';
+import { PersonCircle, InfoCircle,} from 'react-bootstrap-icons';
 import "bootstrap/dist/css/bootstrap.min.css";
 import "bootstrap/dist/js/bootstrap.bundle.min.js";
 import { useState, useEffect, useRef } from "react";
@@ -134,40 +134,98 @@ function HomeComponent({user,conversations,messages,uuid,fetchmembers}) {
             ) : (
                 <>
                     {/* Group modal */}
-                    <div className="modal fade" id="groupModal" data-bs-backdrop="static" data-bs-keyboard="false" tabIndex={-1} aria-labelledby="staticBackdropLabel" aria-hidden="true">
+                    <div className="modal fade" id="groupModal" aria-hidden="true" aria-labelledby="groupModal" tabIndex={-1}>
                         <div className="modal-dialog modal-dialog-scrollable modal-fullscreen-md-down ">
                             <div className="modal-content theme-gray">
                                 <div className="modal-header">
                                     <img className="avatar me-3" src={chatImg} alt="Profile" id="chatHeaderImg" style={{width: "60px" ,height:"60px"}} />
                                     <div className="d-flex flex-column">
-                                        <h1 className="modal-title fs-5" id="staticBackdropLabel">{chatName}</h1>
+                                        <h1 className="modal-title fs-5">{chatName}</h1>
                                         <span className="fw-lighter text-white">{members?.length} members</span>
                                     </div>
                                     <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                                 </div>
+                                
                                 <div className="modal-body">
-                                    <div data-bs-target="#userModal" data-bs-toggle="modal">Open second modal</div>                           
+                                    {members?.map((member) => (
+                                        <div data-bs-target={`#${member.id}`} data-bs-toggle="modal">
+                                            <div className="row p-3 user-row">
+                                                <div className="col user">
+                                                    {member.profile ? (
+                                                        <img className="avatar me-3" src={member.profile} alt="Profile" style={{width: "50px" ,height:"50px"}} />
+                                                    ) : (
+                                                        <PersonCircle className="avatar me-3" style={{width: "50px" ,height:"50px"}} />
+                                                    )}
+                                                    <span className="fw-bold" style={{fontSize: "18px"}}>{member.nickname}</span>
+                                                </div>
+                                            </div>
+                                        </div>     
+                                    ))}                      
                                 </div>
                             </div>
                         </div>
                     </div>
+                    
+                    {/* User modal */}
+                    {members?.map((member) => (
+                        <div className="modal fade " id={`${member.id}`} aria-hidden="true" aria-labelledby="exampleModalToggleLabel2" tabIndex={-1} key={member.id}>
+                            <div className="modal-dialog modal-dialog-centered modal-fullscreen-md-down">
+                                <div className="modal-content theme-gray">
+                                    <div className="modal-header">
+                                        <div data-bs-target="#groupModal" data-bs-toggle="modal" className="me-2 user-modal-back-button">←</div>
+                                        <h1 className="modal-title fs-5" id="exampleModalToggleLabel2">        
+                                            {member.profile ? (
+                                                <img className="avatar me-3" src={member.profile} alt="Profile" style={{width: "60px" ,height:"60px"}} />
+                                            ) : (
+                                                <PersonCircle className="avatar me-3" style={{width: "50px" ,height:"50px"}} />
+                                            )}
+                                            <span className="fw-bold" style={{fontSize: "18px"}}>{member.nickname}</span>
+                                        </h1>
+                                        <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                    </div>
+                                    <div className="modal-body">
+                                        <div class="container">
+                                            <div class="row">
+                                                <div class="col-1 me-4">
+                                                    <InfoCircle style={{width:"30px" ,height:"30px"}}/>
+                                                </div>
+                                                <div class="col-8">
+                                                    <span className="fw-normal">
+                                                        {member.bio}
+                                                    </span>
+                                                    <p className="fw-ligher text-secondary">
+                                                        bio
+                                                    </p>
+                                                    <span className="fw-normal">
+                                                        @{member.username}
+                                                    </span>
+                                                    <p className="fw-ligher text-secondary">
+                                                        username
+                                                    </p>
+                                                </div>
 
-                    <div className="modal fade" id="userModal" aria-hidden="true" aria-labelledby="exampleModalToggleLabel2" tabIndex={-1}>
-                        <div className="modal-dialog modal-dialog-centered modal-fullscreen-md-down">
-                            <div className="modal-content">
-                            <div className="modal-header">
-                                <h1 className="modal-title fs-5" id="exampleModalToggleLabel2">Modal 2</h1>
-                                <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                            </div>
-                            <div className="modal-body">
-                                Hide this modal and show the first with the button below.
-                            </div>
-                            <div className="modal-footer">
-                                <button className="btn btn-primary" data-bs-target="#groupModal" data-bs-toggle="modal">Back to first</button>
-                            </div>
+                                                <div class="col-8 ms-5 ">
+                                                    <div className="send-message p-2">
+                                                        Send Message
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="modal-footer">
+                                        <div className="add-to-contacts p-2">
+                                            Add To Contacts
+                                        </div>
+                                        <div className="user-block p-2">
+                                            Block User
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    ))}
+
 
                     {/* Main Page */}
                     <div className="chat-container">
@@ -206,9 +264,13 @@ function HomeComponent({user,conversations,messages,uuid,fetchmembers}) {
                                     user.id === message.sender.id ?
                                         <div className="message sent">
                                             {message.sender.profile ? (
-                                                <img src={message.sender.profile} className="avatar" />
+                                                <a role="button" data-bs-toggle="modal" data-bs-target={`#${message.sender.id}`}>
+                                                    <img src={message.sender.profile} className="avatar"   />
+                                                </a>
                                             ) : (
-                                                <PersonCircle className="avatar" />
+                                                <a role="button" data-bs-toggle="modal" data-bs-target={`#${message.sender.id}`}>
+                                                    <PersonCircle className="avatar" />
+                                                </a>
                                             )}
                                             <div className="message-bubble">
                                                 <div className="message-header">
