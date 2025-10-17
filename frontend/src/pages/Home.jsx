@@ -39,11 +39,11 @@ function Home() {
             }
 
             if (data.backgroundImage instanceof File) {
-            formData.append("background_image", data.backgroundImage);
+                formData.append("background_image", data.backgroundImage);
             }
             
             Object.entries(data).forEach(([key, value]) => {
-            if (key !== "profile" && value !== undefined && value !== null) {
+            if (key !== "profile" && key !== "background_image" && value !== undefined && value !== null) {
                 formData.append(key, value);
             }
             });
@@ -83,18 +83,8 @@ function Home() {
         }
     }
 
-    const handleSubmit = async (data) => {
-            try {
-                const res = await api.post("chat/message/create/", data);
-                setMessages((prev) => [...prev, res.data]);
-            } catch (err) {
-                console.error("Error sending message:", err);
-                alert("Failed to send message");
-            }
-    }
-
     return (
-        <HomeComponent user={user} conversations={conversations} messages={messages} uuid={uuid} onSubmit={handleSubmit} UserUpdateSubmit={UserUpdateSubmit} /> 
+        <HomeComponent user={user} conversations={conversations} messages={messages} uuid={uuid} UserUpdateSubmit={UserUpdateSubmit} /> 
     );
 }
 

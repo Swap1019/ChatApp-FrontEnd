@@ -16,6 +16,7 @@ function HomeComponent({user,conversations,messages,uuid,fetchmembers,UserUpdate
     const [liveMessage, setLiveMessage] = useState(messages || []);
     const [nickName, setNickName] = useState("");
     const [profile, setProfile] = useState("");
+    const [profilePreview, setProfilePreview] = useState("");
     const [bio, setBio] = useState("");
     const [userName, setUserName] = useState("");
     const [email, setEmail] = useState("");
@@ -30,7 +31,7 @@ function HomeComponent({user,conversations,messages,uuid,fetchmembers,UserUpdate
 
     const handleChatClick = (conversation) => {
         setChatName(conversation?.name || "");
-        setChatImg(conversation?.profile || "");
+        setChatImg(conversation?.profile_url || "");
         openChat();
         navigate(`/${conversation?.id}`);
     };
@@ -42,21 +43,6 @@ function HomeComponent({user,conversations,messages,uuid,fetchmembers,UserUpdate
                 hour: '2-digit',
                 minute:'2-digit',
         });
-    }
-
-    function displaySelectedImage(event, elementId) {
-        const selectedImage = document.getElementById(elementId);
-        const fileInput = event.target;
-
-        if (fileInput.files && fileInput.files[0]) {
-            const reader = new FileReader();
-
-            reader.onload = function(e) {
-                selectedImage.src = e.target.result;
-            };
-
-            reader.readAsDataURL(fileInput.files[0]);
-        }
     }
 
     function openChat() {
@@ -118,6 +104,7 @@ function HomeComponent({user,conversations,messages,uuid,fetchmembers,UserUpdate
     useEffect(() => {
         if (user) {
         setProfile(user.profile || "");
+        setProfilePreview(user.profile_url|| "");
         setUserName(user.username || "");
         setEmail(user.email || "");
         setNickName(user.nickname || "");
@@ -125,7 +112,7 @@ function HomeComponent({user,conversations,messages,uuid,fetchmembers,UserUpdate
         setLastName(user.last_name || "");
         setBio(user.bio || "");
         setBackGroundImage(user.background_image || "");
-        setBackgroundPreview(user.background_image || "");
+        setBackgroundPreview(user.background_image_url || "");
         }
     }, [user]);
 
@@ -166,6 +153,7 @@ function HomeComponent({user,conversations,messages,uuid,fetchmembers,UserUpdate
 
     useEffect(() => {
         scrollToBottom();
+        console.log(liveMessage)
     }, [liveMessage]);
 
     return (
@@ -196,8 +184,8 @@ function HomeComponent({user,conversations,messages,uuid,fetchmembers,UserUpdate
                                         <div data-bs-target={`#${member.id}`} data-bs-toggle="modal">
                                             <div className="row p-3 user-row">
                                                 <div className="col user">
-                                                    {member.profile ? (
-                                                        <img className="avatar me-3" src={member.profile} alt="Profile" style={{width: "50px" ,height:"50px"}} />
+                                                    {member.profile_url ? (
+                                                        <img className="avatar me-3" src={member.profile_url} alt="Profile" style={{width: "50px" ,height:"50px"}} />
                                                     ) : (
                                                         <PersonCircle className="avatar me-3" style={{width: "50px" ,height:"50px"}} />
                                                     )}
@@ -219,8 +207,8 @@ function HomeComponent({user,conversations,messages,uuid,fetchmembers,UserUpdate
                                     <div className="modal-header">
                                         <div data-bs-target="#groupModal" data-bs-toggle="modal" className="me-2 user-modal-back-button">←</div>
                                         <h1 className="modal-title fs-5" id="exampleModalToggleLabel2">        
-                                            {member.profile ? (
-                                                <img className="avatar me-3" src={member.profile} alt="Profile" style={{width: "60px" ,height:"60px"}} />
+                                            {member.profile_url ? (
+                                                <img className="avatar me-3" src={member.profile_url} alt="Profile" style={{width: "60px" ,height:"60px"}} />
                                             ) : (
                                                 <PersonCircle className="avatar me-3" style={{width: "50px" ,height:"50px"}} />
                                             )}
@@ -280,8 +268,8 @@ function HomeComponent({user,conversations,messages,uuid,fetchmembers,UserUpdate
                                         <div className="d-flex justify-content-center mb-4 align-items-center">
                                             <div data-mdb-ripple-init className="btn">
                                                 <label htmlFor="customFile2" style={{cursor:'pointer'}}>
-                                                    {profile ? ( 
-                                                        <img className="avatar me-3" src={profile} alt="Profile" style={{width: "80px" ,height:"80px"}} id="selectedAvatar"/>
+                                                    {profilePreview ? ( 
+                                                        <img className="avatar me-3" src={profilePreview} alt="Profile" style={{width: "80px" ,height:"80px"}} id="selectedAvatar"/>
                                                     ) : (
                                                         <PersonCircle className="avatar me-3" style={{width: "80px" ,height:"80px"}} />
                                                     )}
@@ -293,10 +281,11 @@ function HomeComponent({user,conversations,messages,uuid,fetchmembers,UserUpdate
                                                     onChange={(event) => {
                                                     const file = event.target.files[0];
                                                     if (!file) return;
+                                                    setProfile(file);
 
                                                     const reader = new FileReader();
                                                     reader.onload = (e) => {
-                                                        setProfile(e.target.result);
+                                                        setProfilePreview(e.target.result);
                                                     };
                                                     reader.readAsDataURL(file);
                                                     }}
@@ -474,8 +463,8 @@ function HomeComponent({user,conversations,messages,uuid,fetchmembers,UserUpdate
                                 <div class="offcanvas-body">
                                     <a className="btn text-white d-flex justify-content-start account-control-button" role="button" data-bs-toggle="modal" data-bs-target={"#user-settings"}>
                                         <h5 className="ms-2 d-flex justify-content-center align-items-center">
-                                            {user.profile ? 
-                                                <img className="avatar me-2" src={user.profile} />
+                                            {user.profile_url ? 
+                                                <img className="avatar me-2" src={user.profile_url} />
                                                 :
                                                 <PersonCircle size={40} className="border border-white rounded-circle me-2"/>
                                             }
@@ -497,8 +486,8 @@ function HomeComponent({user,conversations,messages,uuid,fetchmembers,UserUpdate
                                 className="list-group-item chat-item"
                                 onClick={() => handleChatClick(conversation)}
                                 >
-                                { conversation.profile ? 
-                                    <img className="m-0" src={conversation.profile} />
+                                { conversation.profile_url ? 
+                                    <img className="m-0" src={conversation.profile_url} />
                                     :
                                     <People size={35} className="border border-white rounded-circle"/>
                                 }
@@ -510,7 +499,7 @@ function HomeComponent({user,conversations,messages,uuid,fetchmembers,UserUpdate
                         </div>
 
                         {/* Chat content */}
-                        <div className="chat-content" id="chatContent" style={{ backgroundImage: `url(${user?.background_image ? user.background_image : "https://res.cloudinary.com/dwfngrwoe/image/upload/v1758392790/default_hgh8gm.webp"})`}}>
+                        <div className="chat-content" id="chatContent" style={{ backgroundImage: `url(${user?.background_image_url ? user.background_image_url : "https://res.cloudinary.com/dwfngrwoe/image/upload/v1758392790/default_hgh8gm.webp"})`}}>
                             {chatName ? 
                             <div className="chat-header">
                                 {/* Group modal button */}
@@ -532,9 +521,9 @@ function HomeComponent({user,conversations,messages,uuid,fetchmembers,UserUpdate
                                 {liveMessage?.map((message) => (
                                     user.id === message.sender.id ?
                                         <div className="message sent">
-                                            {message.sender.profile ? (
+                                            {message.sender.profile_url ? (
                                                 <a role="button" data-bs-toggle="modal" data-bs-target={`#${message.sender.id}`}>
-                                                    <img src={message.sender.profile} className="avatar"   />
+                                                    <img src={message.sender.profile_url} className="avatar"   />
                                                 </a>
                                             ) : (
                                                 <a role="button" data-bs-toggle="modal" data-bs-target={`#${message.sender.id}`}>
@@ -554,7 +543,7 @@ function HomeComponent({user,conversations,messages,uuid,fetchmembers,UserUpdate
                                         :
                                         <div className="message received">
                                             {message.sender.profile ? (
-                                                <img src={message.sender.profile} className="avatar" />
+                                                <img src={message.sender.profile_url} className="avatar" />
                                             ) : (
                                                 <PersonCircle size={35} />
                                             )}
