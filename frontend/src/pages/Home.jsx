@@ -8,6 +8,8 @@ import api from "../api";
 function Home() {
     const [user, setUser] = useState(null);
     const [conversations, setConversations] = useState();
+    const [isSuccess, setIsSuccess] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(0);
     const [messages, setMessages] = useState();
     const { uuid } = useParams();
 
@@ -38,22 +40,35 @@ function Home() {
                 formData.append("profile", data.profile);
             }
 
-            if (data.backgroundImage instanceof File) {
-                formData.append("background_image", data.backgroundImage);
+            if (data.background_image instanceof File) {
+                formData.append("background_image", data.background_image);
             }
             
             Object.entries(data).forEach(([key, value]) => {
             if (key !== "profile" && key !== "background_image" && value !== undefined && value !== null) {
                 formData.append(key, value);
             }
+            
             });
 
             api.patch("user/profile/", formData, {
-                headers: { "Content-Type": "multipart/form-data" }
+                headers: { "Content-Type": "multipart/form-data" },
+                onUploadProgress: (progressEvent) => {
+                    const progress = (progressEvent.loaded / progressEvent.total) * 50;
+                    setUploadProgress(progress);
+                },
                 })
                 .then((res) => {
-                if (res.status === 200) alert("Profile updated successfully!");
-                else alert(`Profile update failed with status: ${res.status}`);
+                if (res.status === 200) {
+                    alert("Profile updated successfully!");
+                    setIsSuccess(true)
+                }
+                else if (res.status === 202) {
+                    alert(`${res.data.detail}: ${res.status}`);
+                    setIsSuccess(true)
+                } else {
+                    alert (`Error while profile updating ${res.status}`)
+                }
                 })
                 .catch((error) => {
                 if (error.response) {
@@ -84,7 +99,7 @@ function Home() {
     }
 
     return (
-        <HomeComponent user={user} conversations={conversations} messages={messages} uuid={uuid} UserUpdateSubmit={UserUpdateSubmit} /> 
+        <HomeComponent user={user} conversations={conversations} messages={messages} uuid={uuid} UserUpdateSubmit={UserUpdateSubmit} uploadProgress={uploadProgress} uploadIsSuccess={isSuccess} /> 
     );
 }
 

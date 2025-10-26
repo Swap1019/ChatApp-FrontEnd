@@ -7,7 +7,7 @@ import "../styles/Home.css";
 import "../styles/Base.css";
 import api from "../api"; 
 
-function HomeComponent({user,conversations,messages,uuid,fetchmembers,UserUpdateSubmit}) {
+function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit,uploadProgress,uploadIsSuccess}) {
     const [content, setContent] = useState("");
     const [socket, setSocket] = useState("");
     const [chatName, setChatName] = useState("");
@@ -59,7 +59,6 @@ function HomeComponent({user,conversations,messages,uuid,fetchmembers,UserUpdate
         }
     }
 
-    
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     };
@@ -86,6 +85,10 @@ function HomeComponent({user,conversations,messages,uuid,fetchmembers,UserUpdate
 
         if (socket && socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify(msg));
+        }
+        const textarea = document.querySelector("textarea");
+        if (textarea) {
+            textarea.focus();
         }
     }
 
@@ -131,6 +134,12 @@ function HomeComponent({user,conversations,messages,uuid,fetchmembers,UserUpdate
         const token = localStorage.getItem("access");
         const ws = new WebSocket(`ws://127.0.0.1:8000/chat/${uuid}/?token=${token}`);
 
+        const pingInterval = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "ping" }));
+            }
+        }, 25000);
+
         ws.onopen = () => {
             console.log("Websocket opened");
         };
@@ -148,7 +157,10 @@ function HomeComponent({user,conversations,messages,uuid,fetchmembers,UserUpdate
 
         setSocket(ws);
 
-        return () => ws.close();
+        return () => {
+            clearInterval(pingInterval);
+            ws.close();
+        }
     }, [uuid]);
 
     useEffect(() => {
@@ -168,7 +180,7 @@ function HomeComponent({user,conversations,messages,uuid,fetchmembers,UserUpdate
                             <div className="modal-content theme-gray">
                                 <div className="modal-header">
                                     {chatImg ? 
-                                        <img src={chatImg} alt="Profile" id="chatHeaderImg" className="m-0" style={{width:"60px",height:"60px"}} />
+                                        <img src={chatImg} alt="Profile" id="chatHeaderImg" className="m-0 me-2 avatar" style={{width:"60px",height:"60px"}} />
                                         :
                                         <People size={60} className="border border-white rounded-circle me-2"/>
                                     }
@@ -217,12 +229,12 @@ function HomeComponent({user,conversations,messages,uuid,fetchmembers,UserUpdate
                                         <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                                     </div>
                                     <div className="modal-body">
-                                        <div class="container">
-                                            <div class="row">
-                                                <div class="col-1 me-4">
+                                        <div className="container">
+                                            <div className="row">
+                                                <div className="col-1 me-4">
                                                     <InfoCircle style={{width:"30px" ,height:"30px"}}/>
                                                 </div>
-                                                <div class="col-8">
+                                                <div className="col-8">
                                                     <span className="fw-normal">
                                                         {member.bio}
                                                     </span>
@@ -237,7 +249,7 @@ function HomeComponent({user,conversations,messages,uuid,fetchmembers,UserUpdate
                                                     </p>
                                                 </div>
 
-                                                <div class="col-8 ms-5 ">
+                                                <div className="col-8 ms-5 ">
                                                     <div className="send-message p-2">
                                                         Send Message
                                                     </div>
@@ -456,11 +468,11 @@ function HomeComponent({user,conversations,messages,uuid,fetchmembers,UserUpdate
                             </div>
                             
                             {/* Off-canvas */}
-                            <div class="offcanvas offcanvas-start text-bg-dark" data-bs-scroll="true" tabindex={-1} id="offcanvasWithBothOptions" aria-labelledby="offcanvasWithBothOptionsLabel">
-                                <div class="offcanvas-header">
-                                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+                            <div className="offcanvas offcanvas-start text-bg-dark" data-bs-scroll="true" tabIndex={-1} id="offcanvasWithBothOptions" aria-labelledby="offcanvasWithBothOptionsLabel">
+                                <div className="offcanvas-header">
+                                    <button type="button" className="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
                                 </div>
-                                <div class="offcanvas-body">
+                                <div className="offcanvas-body">
                                     <a className="btn text-white d-flex justify-content-start account-control-button" role="button" data-bs-toggle="modal" data-bs-target={"#user-settings"}>
                                         <h5 className="ms-2 d-flex justify-content-center align-items-center">
                                             {user.profile_url ? 
@@ -565,14 +577,23 @@ function HomeComponent({user,conversations,messages,uuid,fetchmembers,UserUpdate
                                     e.preventDefault();
                                     sendMessage();
                                     setContent("");
+                                    const textarea = e.target.querySelector("textarea");
+                                    if (textarea) textarea.focus();
                                     }}>
                                 <textarea
                                         placeholder="Type a message..."
                                         value={content} 
                                         onChange={(e) => setContent(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter" && !e.shiftKey) {
+                                                e.preventDefault();  // Prevent adding a new line
+                                                sendMessage();
+                                                setContent("");
+                                            }
+                                        }}
                                     >
                                 </textarea>
-                                <button type="submit" className="send-icon-button">
+                                <button type="submit" className="send-icon-button" id="send-button">
                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="25" height="25" fill="currentColor" className="bi bi-send send-icon">
                                         <path d="M15.854.146a.5.5 0 0 1 .11.54l-5.819 14.547a.75.75 0 0 1-1.329.124l-3.178-4.995L.643 7.184a.75.75 0 0 1 .124-1.33L15.314.037a.5.5 0 0 1 .54.11ZM6.636 10.07l2.761 4.338L14.13 2.576zm6.787-8.201L1.591 6.602l4.339 2.76z"></path>
                                     </svg>
