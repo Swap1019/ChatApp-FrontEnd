@@ -14,7 +14,7 @@
 }
 
 body {
-  font-family: Arial, sans-serif;
+  font-family: Arial, Helvetica, sans-serif;
   color: var(--text-color);
   background-color: var(--bg-color);
   height: 100dvh;
@@ -214,6 +214,19 @@ body {
   text-align: left;
   white-space: pre-wrap;
 }
+
+.account-control-button {
+  width: 100vh;
+  margin-left: -20px;
+  background-color: #535353;
+  padding: 10px;
+}
+
+.account-control-button:hover {
+  background-color: #7c7c7c;
+}
+
+
 
 /* Chat input */
 .chat-input {
