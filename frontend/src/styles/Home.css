@@ -236,19 +236,17 @@ body {
 
 .chat-input textarea {
   flex: 1;
-  padding: 10px;
+  height: 50px;
   border: none;
   outline: none;
   resize: none;
-  background-color: #1b1d20;
+  background-color: var(--panel-color);
   color: var(--text-color);
 }
 
 .chat-input button {
-  background-color: var(--accent-color);
   color: #fff;
   border: none;
-  padding: 10px 15px;
   cursor: pointer;
 }
 
@@ -263,16 +261,10 @@ body {
 }
 
 .send-icon-button {
-  background-color: #1b1d20 !important;
+  background-color: #a4a4a4 !important;
   border: none;
-  padding: 0;
+  padding: 2;
   cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  outline: none;
-  box-shadow: none;
-  -webkit-tap-highlight-color: transparent; /* mobile */
 }
 
 .send-icon-button:focus,

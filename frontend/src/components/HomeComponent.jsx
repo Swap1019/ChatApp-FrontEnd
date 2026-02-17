@@ -1,4 +1,4 @@
-import { PersonCircle, Person, InfoCircle, PeopleFill, People ,List} from 'react-bootstrap-icons';
+import { PersonCircle, Person, InfoCircle, PeopleFill, People ,List ,Search, ArrowRightCircleFill, ArrowRightCircle} from 'react-bootstrap-icons';
 import "bootstrap/dist/css/bootstrap.min.css";
 import "bootstrap/dist/js/bootstrap.bundle.min.js";
 import { useState, useEffect, useRef } from "react";
@@ -7,12 +7,18 @@ import "../styles/Home.css";
 import "../styles/Base.css";
 import api from "../api"; 
 
-function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit,uploadProgress,uploadIsSuccess}) {
+function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
     const [content, setContent] = useState("");
+    const [searchUsers, setSearchUsers] = useState("");
+    const [searchResults, setsearchResults] = useState([]);
+    const [currentConversationIsGroup, setCurrentConversationIsGroup] = useState([]);
     const [socket, setSocket] = useState("");
+    const [userSocket, setUserSocket] = useState(null);
     const [chatName, setChatName] = useState("");
     const [chatImg, setChatImg] = useState(null);
     const [members, setMembers] = useState();
+    const [privateUser, setPrivateUser] = useState();
+    const [liveConversations, setLiveConversations] = useState(conversations || []);
     const [liveMessage, setLiveMessage] = useState(messages || []);
     const [nickName, setNickName] = useState("");
     const [profile, setProfile] = useState("");
@@ -27,15 +33,37 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit,upload
     
 
     const messagesEndRef = useRef(null);
+    const lastSentRef = useRef({ text: "", ts: 0 });
+    const chatSocketRef = useRef(null);
+    const chatSocketRoomRef = useRef(null);
+    const userSocketRef = useRef(null);
     const navigate = useNavigate();
 
+    const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
+    const wsBaseUrl =
+        import.meta.env.VITE_WS_BASE_URL || wsProtocol + "://" + window.location.hostname + ":8000";
+
     const handleChatClick = (conversation) => {
+        setCurrentConversationIsGroup(conversation?.is_group || "");
         setChatName(conversation?.name || "");
         setChatImg(conversation?.profile_url || "");
         openChat();
         navigate(`/${conversation?.id}`);
     };
 
+    const handleSearchUserClick = (searchedUser) => {
+        if (!userSocket || userSocket.readyState !== WebSocket.OPEN) {
+            console.error("User websocket is not connected yet");
+            return;
+        }
+
+        userSocket.send(
+            JSON.stringify({
+                type: "create_private_conversation",
+                user_id: searchedUser.id,
+            })
+        );
+    };
 
     function prettyDate(time) {
             var date = new Date(time);
@@ -66,30 +94,62 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit,upload
     const getmembers = async () => {
         if (uuid && user) {
             await api
-                .get(`/chat/${uuid}/members`)
+                .get(`/chat/${uuid}/members/`)
                 .then((res) => res.data)
                 .then((data) => {
-                    setMembers(data.members);
-                    console.log(data)
+                    if (currentConversationIsGroup) {
+                        setMembers(data.members);
+                    } else {
+                        setPrivateUser(data.other_user);
+                    }
                 })
                 .catch((err) => alert(err));
         }
     }
 
-    const sendMessage = () => {
-        if (!content.trim()) return;
+    const getsearchresults = async (searchUsers) => {
+        if (searchUsers) {
+            setsearchResults([]);
 
-        const msg = {
-            text: content
-        };
+            await api
+                .get(`/chat/search/users/?q=${searchUsers}`)
+                .then((res) => res.data)
+                .then((data) => {
+                    if (data.length != 0) {
+                        setsearchResults(data);
+                    } else {
+                        alert("No user was found");
+                    }
+                })
+                .catch((err) => alert(err));
+        }
+    }
+
+
+    const sendMessage = () => {
+        const text = content.trim();
+        if (!text) return false;
+
+        const now = Date.now();
+        if (
+            lastSentRef.current.text === text &&
+            now - lastSentRef.current.ts < 800
+        ) {
+            return false;
+        }
 
         if (socket && socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify(msg));
+            socket.send(JSON.stringify({ text }));
+            lastSentRef.current = { text, ts: now };
+
+            const textarea = document.querySelector("textarea");
+            if (textarea) {
+                textarea.focus();
+            }
+            return true;
         }
-        const textarea = document.querySelector("textarea");
-        if (textarea) {
-            textarea.focus();
-        }
+
+        return false;
     }
 
     useEffect(() => {
@@ -128,11 +188,34 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit,upload
         setLiveMessage(messages || [])
     }, [messages]);
 
+    useEffect(() =>{
+        setLiveConversations(conversations || [])
+    }, [conversations]);
+
+
     useEffect(() => {
         if (!uuid) return;
 
+        const current = chatSocketRef.current;
+        if (
+            current &&
+            chatSocketRoomRef.current === uuid &&
+            (current.readyState === WebSocket.OPEN ||
+                current.readyState === WebSocket.CONNECTING)
+        ) {
+            return;
+        }
+
+        if (current) {
+            current.close();
+            chatSocketRef.current = null;
+            chatSocketRoomRef.current = null;
+        }
+
         const token = localStorage.getItem("access");
-        const ws = new WebSocket(`wss://${import.meta.env.VITE_API_URL}/chat/${uuid}/?token=${token}`);
+        const ws = new WebSocket(wsBaseUrl + "/chat/" + uuid + "/?token=" + token);
+        chatSocketRef.current = ws;
+        chatSocketRoomRef.current = uuid;
 
         const pingInterval = setInterval(() => {
             if (ws.readyState === WebSocket.OPEN) {
@@ -153,16 +236,107 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit,upload
 
         ws.onclose = () => {
             console.log("Websocket closed");
+            if (chatSocketRef.current === ws) {
+                chatSocketRef.current = null;
+                chatSocketRoomRef.current = null;
+            }
         };
 
         setSocket(ws);
 
         return () => {
             clearInterval(pingInterval);
+            if (chatSocketRef.current === ws) {
+                chatSocketRef.current = null;
+                chatSocketRoomRef.current = null;
+            }
             ws.close();
-        }
-    }, [uuid]);
+        };
+    }, [uuid, wsBaseUrl]);
 
+
+    useEffect(() => {
+    if (!user) return;
+
+    const current = userSocketRef.current;
+    if (
+        current &&
+        (current.readyState === WebSocket.OPEN ||
+            current.readyState === WebSocket.CONNECTING)
+    ) {
+        return;
+    }
+
+    if (current) {
+        current.close();
+        userSocketRef.current = null;
+    }
+
+    const token = localStorage.getItem("access");
+    const ws = new WebSocket(wsBaseUrl + "/ws/user/?token=" + token);
+    userSocketRef.current = ws;
+
+    const pingInterval = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "ping" }));
+        }
+    }, 25000);
+
+    ws.onopen = () => {
+        console.log("User-specific WebSocket connected");
+        setUserSocket(ws);
+    };
+
+    ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        if (data.type === "new_conversation") {
+            setLiveConversations((prev) => {
+                const exists = prev.some((c) => c.id === data.conversation.id);
+                if (!exists) return [...prev, data.conversation];
+                return prev;
+            });
+        }
+
+        if (data.type === "private_conversation_ready") {
+            const conversation = data.conversation;
+            if (!conversation?.id) return;
+
+            setLiveConversations((prev) => {
+                const exists = prev.some((c) => c.id === conversation.id);
+                if (!exists) return [...prev, conversation];
+                return prev;
+            });
+
+            setCurrentConversationIsGroup(conversation?.is_group || "");
+            setChatName(conversation?.name || "");
+            setChatImg(conversation?.profile_url || "");
+            openChat();
+            navigate(`/${conversation?.id}`);
+        }
+
+        if (data.type === "error") {
+            console.error(data.detail || "WebSocket request failed");
+        }
+    };
+
+    ws.onclose = () => {
+        console.log("User-specific WebSocket disconnected");
+        if (userSocketRef.current === ws) {
+            userSocketRef.current = null;
+        }
+        setUserSocket(null);
+    };
+
+    return () => {
+        clearInterval(pingInterval);
+        if (userSocketRef.current === ws) {
+            userSocketRef.current = null;
+        }
+        setUserSocket(null);
+        ws.close();
+    };
+    }, [user?.id, navigate, wsBaseUrl]);
     useEffect(() => {
         scrollToBottom();
         console.log(liveMessage)
@@ -270,6 +444,63 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit,upload
                             </div>
                         </div>
                     ))}
+
+                    {/* Private Chat user modal */}
+                        <div className="modal fade " id="private-user-modal" aria-hidden="true" aria-labelledby="exampleModalToggleLabel2" tabIndex={-1} key="private-user-modal">
+                            <div className="modal-dialog modal-dialog-centered modal-fullscreen-md-down">
+                                <div className="modal-content theme-gray">
+                                    <div className="modal-header">
+                                        <h1 className="modal-title fs-5" id="exampleModalToggleLabel2">        
+                                            {privateUser?.profile_url ? (
+                                                <img className="avatar me-3" src={privateUser?.profile_url} alt="Profile" style={{width: "60px" ,height:"60px"}} />
+                                            ) : (
+                                                <PersonCircle className="avatar me-3" style={{width: "50px" ,height:"50px"}} />
+                                            )}
+                                            <span className="fw-bold" style={{fontSize: "18px"}}>{privateUser?.nickname}</span>
+                                        </h1>
+                                        <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                    </div>
+                                    <div className="modal-body">
+                                        <div className="container">
+                                            <div className="row">
+                                                <div className="col-1 me-4">
+                                                    <InfoCircle style={{width:"30px" ,height:"30px"}}/>
+                                                </div>
+                                                <div className="col-8">
+                                                    <span className="fw-normal">
+                                                        {privateUser?.bio}
+                                                    </span>
+                                                    <p className="fw-ligher text-secondary">
+                                                        bio
+                                                    </p>
+                                                    <span className="fw-normal">
+                                                        @{privateUser?.username}
+                                                    </span>
+                                                    <p className="fw-ligher text-secondary">
+                                                        username
+                                                    </p>
+                                                </div>
+
+                                                <div className="col-8 ms-5 ">
+                                                    <div className="send-message p-2">
+                                                        Send Message
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="modal-footer">
+                                        <div className="add-to-contacts p-2">
+                                            Add To Contacts
+                                        </div>
+                                        <div className="user-block p-2">
+                                            Block User
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
 
                     {/* User settings modal */}
                     <div className="modal fade " id="user-settings" aria-hidden="true" aria-labelledby="exampleModalToggleLabel2" tabIndex={-1} key="user-settings">
@@ -439,7 +670,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit,upload
                     {/* Main Page */}
                     <div className="chat-container">
                         <div className="sidebar" id="sidebar">
-                            <div className="d-flex align-items-center mb-3" style={{ gap: "8px" }}>
+                            <div className="d-flex align-items-center justify-content-start mb-3 mt-2" style={{ gap: "8px" }}>
                                 <button
                                     className="btn btn-sm btn-secondary rounded-circle d-flex align-items-center justify-content-center ms-1"
                                     type="button"
@@ -452,19 +683,46 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit,upload
                                 </button>
 
                                 {/* Wide search bar on the right */}
-                                <input
+                                <div className="d-inline-flex align-items-center justify-content-center w-100" style={{backgroundColor: "#535353ff" , borderRadius: "8px" , height:"37px"}}>
+                                    <input
                                     type="text"
-                                    className="form-control"
+                                    className="form-control m-0"
                                     placeholder="Search chats..."
                                     id="searchInput"
+                                    value={searchUsers} 
+                                    onChange={(e) => setSearchUsers(e.target.value)}
                                     style={{
                                     flexGrow: 1,
                                     borderRadius: "8px",
-                                    border: "1px solid #444",
+                                    border: "None",
                                     backgroundColor: "#535353ff",
                                     color: "white",
                                     }}
-                                />
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                            e.preventDefault();
+                                            getsearchresults(searchUsers);
+                                        }
+                                    }}
+                                    />
+                                    {searchUsers 
+                                        ? 
+                                        <button
+                                            type="button"
+                                            className="btn btn-primary d-flex align-items-center justify-content-center rounded-2 ms-0"
+                                            style={{ width: "35px", height: "35px" }}
+                                            onClick={() => getsearchresults(searchUsers)}
+                                        >
+                                            <Search size={20} />
+                                        </button>
+                                        :
+                                        <button type="button" class="btn btn-secondary d-flex align-items-center justify-content-center rounded-2 ms-0" style={{width:"35px",height:"35px"}}>
+                                            <Search size={20}/>
+                                        </button>
+                                    }
+
+                                </div>
+
                             </div>
                             
                             {/* Off-canvas */}
@@ -492,21 +750,47 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit,upload
                                 </div>
                             </div>
                             <div className="chat-list">
-                            {conversations?.map((conversation) => (
-                                <div
-                                key={conversation?.id}
-                                className="list-group-item chat-item"
-                                onClick={() => handleChatClick(conversation)}
-                                >
-                                { conversation.profile_url ? 
-                                    <img className="m-0" src={conversation.profile_url} />
-                                    :
-                                    <People size={35} className="border border-white rounded-circle"/>
-                                }
-                                
-                                <span className="ms-2">{conversation?.name}</span>
-                                </div>
-                            ))}
+                                {searchUsers ? (
+                                    <>
+                                    {(searchResults.length !== 0) ? (
+                                        searchResults?.map((searchResult) => (
+                                            <div
+                                                key={searchResult?.id}
+                                                className="list-group-item chat-item"
+                                                onClick={() => handleSearchUserClick(searchResult)}
+                                            >
+                                                {searchResult.profile_url ? (
+                                                <img className="m-0" src={searchResult.profile_url} />
+                                                ) : (
+                                                <People size={35} className="border border-white rounded-circle" />
+                                                )}
+
+                                                <span className="ms-2">{searchResult?.nickname}</span>
+                                            </div>
+                                        ))
+                                    ) : 
+                                        <div className="d-flex justify-content-center align-items-center">
+                                            <p>Search for Users</p>
+                                        </div>
+                                    }
+                                    </>
+                                ) : (
+                                    liveConversations?.map((conversation) => (
+                                    <div
+                                        key={conversation?.id}
+                                        className="list-group-item chat-item"
+                                        onClick={() => handleChatClick(conversation)}
+                                    >
+                                        {conversation.profile_url ? (
+                                        <img className="m-0" src={conversation.profile_url} />
+                                        ) : (
+                                        <People size={35} className="border border-white rounded-circle" />
+                                        )}
+
+                                        <span className="ms-2">{conversation?.name}</span>
+                                    </div>
+                                    ))
+                                )}
                             </div>
                         </div>
 
@@ -516,7 +800,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit,upload
                             <div className="chat-header">
                                 {/* Group modal button */}
                                 <button id="backBtn" onClick={backToChats}>←</button>
-                                <div type="button" data-bs-toggle="modal" data-bs-target="#groupModal" onClick={getmembers}>
+                                <div type="button" data-bs-toggle="modal" data-bs-target={currentConversationIsGroup ? "#groupModal" : "#private-user-modal"} onClick={getmembers}>
                                     {chatImg ? 
                                         <img src={chatImg} alt="Profile" id="chatHeaderImg" className="m-0" />
                                         :
@@ -554,7 +838,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit,upload
                                         </div>
                                         :
                                         <div className="message received">
-                                            {message.sender.profile ? (
+                                            {message.sender.profile_url ? (
                                                 <img src={message.sender.profile_url} className="avatar" />
                                             ) : (
                                                 <PersonCircle size={35} />
@@ -572,34 +856,60 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit,upload
                                     ))}
                                     <div ref={messagesEndRef} />
                             </div>
-
+                            {uuid ? (
+                                <>
                             <form className="chat-input" onSubmit={(e) => {
                                     e.preventDefault();
-                                    sendMessage();
+                                    if (sendMessage()) {
                                     setContent("");
+                                    }
                                     const textarea = e.target.querySelector("textarea");
                                     if (textarea) textarea.focus();
                                     }}>
-                                <textarea
+                                        <textarea
                                         placeholder="Type a message..."
-                                        value={content} 
+                                        value={content}
                                         onChange={(e) => setContent(e.target.value)}
                                         onKeyDown={(e) => {
                                             if (e.key === "Enter" && !e.shiftKey) {
-                                                e.preventDefault();  // Prevent adding a new line
-                                                sendMessage();
-                                                setContent("");
+                                            e.preventDefault();
+                                            e.currentTarget.form?.requestSubmit();
                                             }
                                         }}
-                                    >
-                                </textarea>
-                                <button type="submit" className="send-icon-button" id="send-button">
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="25" height="25" fill="currentColor" className="bi bi-send send-icon">
-                                        <path d="M15.854.146a.5.5 0 0 1 .11.54l-5.819 14.547a.75.75 0 0 1-1.329.124l-3.178-4.995L.643 7.184a.75.75 0 0 1 .124-1.33L15.314.037a.5.5 0 0 1 .54.11ZM6.636 10.07l2.761 4.338L14.13 2.576zm6.787-8.201L1.591 6.602l4.339 2.76z"></path>
-                                    </svg>
-                                </button>
+                                        />
+
+                                        <div
+                                        className="d-flex justify-content-center align-items-center"
+                                        style={{ backgroundColor: "#1b1d20" }}
+                                        >
+                                        {content ? (
+                                            <button
+                                            type="submit"
+                                            className="btn btn-primary d-flex justify-content-center align-items-center rounded-pill me-2"
+                                            style={{ width: "50px", height: "35px" }}
+
+                                            >
+                                            <ArrowRightCircleFill size={40} />
+                                            </button>
+                                        ) : (
+                                            <button
+                                            type="submit"
+                                            className="btn btn-secondary d-flex justify-content-center align-items-center rounded-pill me-2"
+                                            style={{ width: "50px", height: "35px" }}
+                                            disabled
+                                            >
+                                            <ArrowRightCircle size={40} />
+                                            </button>
+                                        )}
+                                        </div>
                             </form>
-                            
+                            </>
+                                ) 
+                                :
+                                <div className="d-flex justify-content-center">
+                                    <p>Please select a chat to start messaging</p>
+                                </div>
+                                }
                         </div>
                     </div>
                 </>

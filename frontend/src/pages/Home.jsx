@@ -8,6 +8,7 @@ import api from "../api";
 function Home() {
     const [user, setUser] = useState(null);
     const [conversations, setConversations] = useState();
+    const [conversationIds, setConversationsIds] = useState();
     const [isSuccess, setIsSuccess] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [messages, setMessages] = useState();
@@ -27,9 +28,11 @@ function Home() {
             .then((res) => res.data)
             .then((data) => {
                 setUser(data.user);
-                setConversations(data.conversations)
+                setConversations(data.conversations);
+                setConversationsIds(data.conversationIds)
                 console.log(data);
             })
+            
             .catch((err) => alert(err));
     };
 
@@ -99,7 +102,7 @@ function Home() {
     }
 
     return (
-        <HomeComponent user={user} conversations={conversations} messages={messages} uuid={uuid} UserUpdateSubmit={UserUpdateSubmit} uploadProgress={uploadProgress} uploadIsSuccess={isSuccess} /> 
+        <HomeComponent user={user} conversations={conversations} conversationIds={conversationIds} messages={messages} uuid={uuid} UserUpdateSubmit={UserUpdateSubmit} uploadProgress={uploadProgress} uploadIsSuccess={isSuccess} /> 
     );
 }
 
