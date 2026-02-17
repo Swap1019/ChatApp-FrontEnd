@@ -1,8 +1,12 @@
 import axios from "axios";
-import { ACCESS_TOKEN, REFRESH_TOKEN } from "./constants";
+import { ACCESS_TOKEN } from "./constants";
+
+const API_BASE_URL =
+    import.meta.env.VITE_API_BASE_URL ||
+    window.location.protocol + "//" + window.location.hostname + ":8000";
 
 const api = axios.create({
-    baseURL: `http://${import.meta.env.VITE_API_URL}`, // change if needed
+    baseURL: API_BASE_URL,
     headers: {
         "Content-Type": "application/json",
     },

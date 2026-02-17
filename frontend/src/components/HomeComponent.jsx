@@ -13,6 +13,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
     const [searchResults, setsearchResults] = useState([]);
     const [currentConversationIsGroup, setCurrentConversationIsGroup] = useState([]);
     const [socket, setSocket] = useState("");
+    const [userSocket, setUserSocket] = useState(null);
     const [chatName, setChatName] = useState("");
     const [chatImg, setChatImg] = useState(null);
     const [members, setMembers] = useState();
@@ -32,7 +33,15 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
     
 
     const messagesEndRef = useRef(null);
+    const lastSentRef = useRef({ text: "", ts: 0 });
+    const chatSocketRef = useRef(null);
+    const chatSocketRoomRef = useRef(null);
+    const userSocketRef = useRef(null);
     const navigate = useNavigate();
+
+    const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
+    const wsBaseUrl =
+        import.meta.env.VITE_WS_BASE_URL || wsProtocol + "://" + window.location.hostname + ":8000";
 
     const handleChatClick = (conversation) => {
         setCurrentConversationIsGroup(conversation?.is_group || "");
@@ -42,43 +51,18 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
         navigate(`/${conversation?.id}`);
     };
 
-    const handleSearchUserClick = async (user) => {
-        try {
-            const res = await api.post(`/chat/conversations/private/`, {
-                user_id: user.id,
-            });
-
-            const conversation = res.data.conversation;
-
-            if (!conversation?.id) {
-                console.error("Conversation ID missing!", res.data);
-                return;
-            }
-
-            // If it's not a group, override name and profile with the user's info
-            if (!conversation.is_group) {
-                conversation.name = user.nickname;
-                conversation.profile_url = user.profile_url;
-            }
-
-            // Add conversation to liveConversations if it doesn't exist yet
-            setLiveConversations((prev) => {
-                const exists = prev.some((c) => c.id === conversation.id);
-                if (!exists) {
-                    return [...prev, conversation];
-                }
-                return prev;
-            });
-
-            setCurrentConversationIsGroup(conversation?.is_group || "");
-            setChatName(conversation.name); // already set above for private chat
-            setChatImg(conversation.profile_url); // already set above for private chat
-            openChat();
-            navigate(`/${conversation?.id}`);
-
-        } catch (err) {
-            console.error("Error fetching conversation:", err);
+    const handleSearchUserClick = (searchedUser) => {
+        if (!userSocket || userSocket.readyState !== WebSocket.OPEN) {
+            console.error("User websocket is not connected yet");
+            return;
         }
+
+        userSocket.send(
+            JSON.stringify({
+                type: "create_private_conversation",
+                user_id: searchedUser.id,
+            })
+        );
     };
 
     function prettyDate(time) {
@@ -143,19 +127,29 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
 
 
     const sendMessage = () => {
-        if (!content.trim()) return;
+        const text = content.trim();
+        if (!text) return false;
 
-        const msg = {
-            text: content
-        };
+        const now = Date.now();
+        if (
+            lastSentRef.current.text === text &&
+            now - lastSentRef.current.ts < 800
+        ) {
+            return false;
+        }
 
         if (socket && socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify(msg));
+            socket.send(JSON.stringify({ text }));
+            lastSentRef.current = { text, ts: now };
+
+            const textarea = document.querySelector("textarea");
+            if (textarea) {
+                textarea.focus();
+            }
+            return true;
         }
-        const textarea = document.querySelector("textarea");
-        if (textarea) {
-            textarea.focus();
-        }
+
+        return false;
     }
 
     useEffect(() => {
@@ -202,8 +196,26 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
     useEffect(() => {
         if (!uuid) return;
 
+        const current = chatSocketRef.current;
+        if (
+            current &&
+            chatSocketRoomRef.current === uuid &&
+            (current.readyState === WebSocket.OPEN ||
+                current.readyState === WebSocket.CONNECTING)
+        ) {
+            return;
+        }
+
+        if (current) {
+            current.close();
+            chatSocketRef.current = null;
+            chatSocketRoomRef.current = null;
+        }
+
         const token = localStorage.getItem("access");
-        const ws = new WebSocket(`ws://127.0.0.1:8000/chat/${uuid}/?token=${token}`);
+        const ws = new WebSocket(wsBaseUrl + "/chat/" + uuid + "/?token=" + token);
+        chatSocketRef.current = ws;
+        chatSocketRoomRef.current = uuid;
 
         const pingInterval = setInterval(() => {
             if (ws.readyState === WebSocket.OPEN) {
@@ -224,16 +236,107 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
 
         ws.onclose = () => {
             console.log("Websocket closed");
+            if (chatSocketRef.current === ws) {
+                chatSocketRef.current = null;
+                chatSocketRoomRef.current = null;
+            }
         };
 
         setSocket(ws);
 
         return () => {
             clearInterval(pingInterval);
+            if (chatSocketRef.current === ws) {
+                chatSocketRef.current = null;
+                chatSocketRoomRef.current = null;
+            }
             ws.close();
-        }
-    }, [uuid]);
+        };
+    }, [uuid, wsBaseUrl]);
 
+
+    useEffect(() => {
+    if (!user) return;
+
+    const current = userSocketRef.current;
+    if (
+        current &&
+        (current.readyState === WebSocket.OPEN ||
+            current.readyState === WebSocket.CONNECTING)
+    ) {
+        return;
+    }
+
+    if (current) {
+        current.close();
+        userSocketRef.current = null;
+    }
+
+    const token = localStorage.getItem("access");
+    const ws = new WebSocket(wsBaseUrl + "/ws/user/?token=" + token);
+    userSocketRef.current = ws;
+
+    const pingInterval = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "ping" }));
+        }
+    }, 25000);
+
+    ws.onopen = () => {
+        console.log("User-specific WebSocket connected");
+        setUserSocket(ws);
+    };
+
+    ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        if (data.type === "new_conversation") {
+            setLiveConversations((prev) => {
+                const exists = prev.some((c) => c.id === data.conversation.id);
+                if (!exists) return [...prev, data.conversation];
+                return prev;
+            });
+        }
+
+        if (data.type === "private_conversation_ready") {
+            const conversation = data.conversation;
+            if (!conversation?.id) return;
+
+            setLiveConversations((prev) => {
+                const exists = prev.some((c) => c.id === conversation.id);
+                if (!exists) return [...prev, conversation];
+                return prev;
+            });
+
+            setCurrentConversationIsGroup(conversation?.is_group || "");
+            setChatName(conversation?.name || "");
+            setChatImg(conversation?.profile_url || "");
+            openChat();
+            navigate(`/${conversation?.id}`);
+        }
+
+        if (data.type === "error") {
+            console.error(data.detail || "WebSocket request failed");
+        }
+    };
+
+    ws.onclose = () => {
+        console.log("User-specific WebSocket disconnected");
+        if (userSocketRef.current === ws) {
+            userSocketRef.current = null;
+        }
+        setUserSocket(null);
+    };
+
+    return () => {
+        clearInterval(pingInterval);
+        if (userSocketRef.current === ws) {
+            userSocketRef.current = null;
+        }
+        setUserSocket(null);
+        ws.close();
+    };
+    }, [user?.id, navigate, wsBaseUrl]);
     useEffect(() => {
         scrollToBottom();
         console.log(liveMessage)
@@ -757,8 +860,9 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                 <>
                             <form className="chat-input" onSubmit={(e) => {
                                     e.preventDefault();
-                                    sendMessage();
+                                    if (sendMessage()) {
                                     setContent("");
+                                    }
                                     const textarea = e.target.querySelector("textarea");
                                     if (textarea) textarea.focus();
                                     }}>
@@ -769,8 +873,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                         onKeyDown={(e) => {
                                             if (e.key === "Enter" && !e.shiftKey) {
                                             e.preventDefault();
-                                            sendMessage();
-                                            setContent("");
+                                            e.currentTarget.form?.requestSubmit();
                                             }
                                         }}
                                         />
@@ -784,7 +887,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                             type="submit"
                                             className="btn btn-primary d-flex justify-content-center align-items-center rounded-pill me-2"
                                             style={{ width: "50px", height: "35px" }}
-                                            onClick={sendMessage}
+
                                             >
                                             <ArrowRightCircleFill size={40} />
                                             </button>

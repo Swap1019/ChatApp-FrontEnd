@@ -55,7 +55,15 @@ function Register() {
                 navigate("/login/");
             }
         } catch (err) {
-            alert("Registration failed: " + err.response?.data?.detail || err.message);
+            const data = err.response?.data;
+            const fieldErrors = data?.errors
+                ? Object.entries(data.errors)
+                    .map(([field, msgs]) => field + ": " + (Array.isArray(msgs) ? msgs.join(", ") : msgs))
+                    .join("\n")
+                : null;
+
+            const message = fieldErrors || data?.detail || err.message || "Registration failed";
+            alert(message);
         } finally {
             setLoading(false);
         }
