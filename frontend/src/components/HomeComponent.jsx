@@ -1,7 +1,8 @@
-import { PersonCircle, Person, InfoCircle, PeopleFill, People ,List ,Search, ArrowRightCircleFill, ArrowRightCircle} from 'react-bootstrap-icons';
+import { PersonCircle, Person, InfoCircle, PeopleFill, People ,List ,Search, ArrowRightCircleFill, ArrowRightCircle, Paperclip, X} from 'react-bootstrap-icons';
+import { uploadWithTus } from '../tusUpload';
 import "bootstrap/dist/css/bootstrap.min.css";
 import "bootstrap/dist/js/bootstrap.bundle.min.js";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate,Navigate } from "react-router";
 import "../styles/Home.css";
 import "../styles/Base.css";
@@ -30,10 +31,38 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
     const [lastName, setLastName] = useState("");
     const [backGroundImage, setBackGroundImage] = useState("");
     const [backgroundPreview, setBackgroundPreview] = useState(null);
+    const [attachmentModalOpen, setAttachmentModalOpen] = useState(false);
+    const [attachmentText, setAttachmentText] = useState("");
+    const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
+    const [selectedAttachments, setSelectedAttachments] = useState([]);
+    const [fullscreenImageUrl, setFullscreenImageUrl] = useState("");
+    const [fullscreenVideoUrl, setFullscreenVideoUrl] = useState("");
+    const [replyingTo, setReplyingTo] = useState(null);
+    const [replyMenu, setReplyMenu] = useState({
+        visible: false,
+        x: 0,
+        y: 0,
+        messageId: null,
+    });
+    const [dragVisual, setDragVisual] = useState({
+        messageId: null,
+        offsetX: 0,
+    });
     
 
     const messagesEndRef = useRef(null);
+    const textareaRef = useRef(null);
+    const fileInputRef = useRef(null);
     const lastSentRef = useRef({ text: "", ts: 0 });
+    const attachmentUploadsRef = useRef([]);
+    const attachmentsSnapshotRef = useRef([]);
+    const dragStartRef = useRef({
+        x: 0,
+        y: 0,
+        message: null,
+        pointerId: null,
+        active: false,
+    });
     const chatSocketRef = useRef(null);
     const chatSocketRoomRef = useRef(null);
     const userSocketRef = useRef(null);
@@ -72,6 +101,364 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                 minute:'2-digit',
         });
     }
+
+    function truncatePreviewText(text, maxLength = 60) {
+        if (!text) return "";
+        return text.length > maxLength ? text.slice(0, maxLength) + "..." : text;
+    }
+
+    const totalUploadProgress = useMemo(() => {
+        if (!selectedAttachments.length) return 0;
+
+        const totals = selectedAttachments.reduce(
+            (acc, item) => {
+                acc.uploaded += item.uploadedBytes || 0;
+                acc.total += item.totalBytes || item.file.size || 0;
+                return acc;
+            },
+            { uploaded: 0, total: 0 }
+        );
+
+        if (!totals.total) return 0;
+        return Math.round((totals.uploaded / totals.total) * 100);
+    }, [selectedAttachments]);
+
+    function formatBytes(bytes) {
+        if (!bytes) return "0 B";
+        const units = ["B", "KB", "MB", "GB", "TB"];
+        const idx = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+        const value = bytes / (1024 ** idx);
+        return `${value.toFixed(value >= 10 || idx === 0 ? 0 : 1)} ${units[idx]}`;
+    }
+
+    function classifyFileType(file) {
+        if (file.type.startsWith("image/")) return "image";
+        if (file.type.startsWith("video/")) return "video";
+        return "file";
+    }
+
+    function makeAttachmentItem(file) {
+        const kind = classifyFileType(file);
+        const hasPreview = kind === "image" || kind === "video";
+        return {
+            id: `${file.name}-${file.size}-${file.lastModified}-${Date.now()}-${Math.random()
+                .toString(16)
+                .slice(2)}`,
+            file,
+            kind,
+            previewUrl: hasPreview ? URL.createObjectURL(file) : null,
+            status: "pending",
+            progress: 0,
+            uploadedBytes: 0,
+            totalBytes: file.size || 0,
+            uploadUrl: "",
+            error: "",
+        };
+    }
+
+    function updateAttachment(id, patch) {
+        setSelectedAttachments((prev) =>
+            prev.map((item) => (item.id === id ? { ...item, ...patch } : item))
+        );
+    }
+
+    function cleanupAttachmentPreviews(items) {
+        items.forEach((item) => {
+            if (item.previewUrl) {
+                URL.revokeObjectURL(item.previewUrl);
+            }
+        });
+    }
+
+    function openAttachmentPicker() {
+        fileInputRef.current?.click();
+    }
+
+    function handleAttachmentSelection(event) {
+        const files = Array.from(event.target.files || []);
+        if (!files.length) return;
+
+        const newItems = files.map((file) => makeAttachmentItem(file));
+        setSelectedAttachments((prev) => [...prev, ...newItems]);
+        setAttachmentModalOpen(true);
+        event.target.value = "";
+    }
+
+    function removeAttachment(id) {
+        setSelectedAttachments((prev) => {
+            const target = prev.find((item) => item.id === id);
+            if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
+            return prev.filter((item) => item.id !== id);
+        });
+    }
+
+    function resetAttachmentComposer() {
+        setSelectedAttachments([]);
+        setAttachmentText("");
+        setIsUploadingAttachments(false);
+        setAttachmentModalOpen(false);
+    }
+
+    function updateLocalUploadMessage(messageId, patch) {
+        setLiveMessage((prev) =>
+            prev.map((message) =>
+                message.id === messageId ? { ...message, ...patch } : message
+            )
+        );
+    }
+
+    function removeLocalMessage(messageId) {
+        setLiveMessage((prev) => prev.filter((message) => message.id !== messageId));
+    }
+
+    function isImageMedia(url) {
+        return /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(url || "");
+    }
+
+    function isVideoMedia(url) {
+        return /\.(mp4|webm|ogg|mov|mkv|m4v)$/i.test(url || "");
+    }
+
+    function openFullscreenImage(url) {
+        if (!url) return;
+        setFullscreenImageUrl(url);
+    }
+
+    function closeFullscreenImage() {
+        setFullscreenImageUrl("");
+    }
+
+    function openFullscreenVideo(url) {
+        if (!url) return;
+        setFullscreenVideoUrl(url);
+    }
+
+    function closeFullscreenVideo() {
+        setFullscreenVideoUrl("");
+    }
+
+    function closeAttachmentModal() {
+        attachmentUploadsRef.current.forEach((upload) => {
+            try {
+                upload.abort();
+            } catch {
+                // Ignore upload abort errors on close.
+            }
+        });
+        attachmentUploadsRef.current = [];
+        cleanupAttachmentPreviews(selectedAttachments);
+        resetAttachmentComposer();
+    }
+
+    async function uploadSelectedAttachments() {
+        if (!selectedAttachments.length || isUploadingAttachments) return;
+
+        const attachmentsSnapshot = selectedAttachments;
+        const captionSnapshot = attachmentText;
+        const totalBytes = attachmentsSnapshot.reduce(
+            (sum, item) => sum + (item.file.size || 0),
+            0
+        );
+
+        const localMessageId = `local-upload-${Date.now()}-${Math.random()
+            .toString(16)
+            .slice(2)}`;
+        const previewListText = attachmentsSnapshot
+            .map((item) => `- ${item.file.name}`)
+            .join("\n");
+        const initialMessageText = [captionSnapshot.trim(), previewListText]
+            .filter(Boolean)
+            .join("\n");
+
+        setLiveMessage((prev) => [
+            ...prev,
+            {
+                id: localMessageId,
+                content: initialMessageText || "Uploading attachments...",
+                sender: {
+                    id: user?.id,
+                    nickname: user?.nickname || "You",
+                    profile_url: user?.profile_url || null,
+                },
+                created_at: new Date().toISOString(),
+                is_read: false,
+                reply_to: null,
+                upload_status: "Uploading 0%",
+                upload_progress: 0,
+            },
+        ]);
+
+        cleanupAttachmentPreviews(attachmentsSnapshot);
+        resetAttachmentComposer();
+
+        (async () => {
+            const completedUploads = [];
+            let completedBytes = 0;
+
+            try {
+                for (const item of attachmentsSnapshot) {
+                    await new Promise((resolve, reject) => {
+                        const upload = uploadWithTus(item.file, {
+                            onProgress: ({ uploaded }) => {
+                                const overallUploaded = completedBytes + uploaded;
+                                const percent = totalBytes
+                                    ? Math.min(100, Math.round((overallUploaded / totalBytes) * 100))
+                                    : 100;
+                                updateLocalUploadMessage(localMessageId, {
+                                    upload_status: `Uploading ${percent}%`,
+                                    upload_progress: percent,
+                                });
+                            },
+                            onSuccess: ({ uploadUrl }) => {
+                                completedUploads.push({
+                                    name: item.file.name,
+                                    url: uploadUrl,
+                                    kind: item.kind,
+                                    size: item.file.size || 0,
+                                });
+                                completedBytes += item.file.size || 0;
+                                resolve();
+                            },
+                            onError: (err) => reject(err),
+                        });
+
+                        attachmentUploadsRef.current.push(upload);
+                    });
+                }
+
+                updateLocalUploadMessage(localMessageId, {
+                    content: captionSnapshot.trim() || "Uploaded attachments",
+                    upload_status: "Uploaded",
+                    upload_progress: 100,
+                });
+
+                const didSend = sendMessage(captionSnapshot.trim(), {
+                    attachments: completedUploads,
+                });
+                if (didSend) {
+                    removeLocalMessage(localMessageId);
+                } else {
+                    updateLocalUploadMessage(localMessageId, {
+                        upload_status: "Upload done, message send failed",
+                    });
+                }
+            } catch (error) {
+                console.error("Attachment upload failed", error);
+                updateLocalUploadMessage(localMessageId, {
+                    upload_status: "Upload failed",
+                });
+            }
+        })();
+    }
+
+    const messagesById = useMemo(() => {
+        const map = new Map();
+        liveMessage?.forEach((msg) => {
+            map.set(String(msg.id), msg);
+        });
+        return map;
+    }, [liveMessage]);
+
+    const resolveReplyTarget = (message) => {
+        if (!message?.reply_to) return null;
+        if (typeof message.reply_to === "object") return message.reply_to;
+        return messagesById.get(String(message.reply_to)) || null;
+    };
+
+    const startReply = (message) => {
+        if (!message) return;
+        setReplyingTo(message);
+        setReplyMenu((prev) => ({ ...prev, visible: false, messageId: null }));
+        textareaRef.current?.focus();
+    };
+
+    const openReplyMenu = (event, message) => {
+        event.stopPropagation();
+        setReplyMenu({
+            visible: true,
+            x: event.clientX,
+            y: event.clientY,
+            messageId: message.id,
+        });
+    };
+
+    const onDragReplyStart = (event, message) => {
+        if (event.pointerType === "mouse" && event.button !== 0) return;
+        dragStartRef.current = {
+            x: event.clientX,
+            y: event.clientY,
+            message,
+            pointerId: event.pointerId,
+            active: true,
+        };
+        if (event.currentTarget?.setPointerCapture) {
+            event.currentTarget.setPointerCapture(event.pointerId);
+        }
+    };
+
+    const onDragReplyMove = (event) => {
+        if (!dragStartRef.current.active || !dragStartRef.current.message) return;
+        if (
+            dragStartRef.current.pointerId !== null &&
+            event.pointerId !== dragStartRef.current.pointerId
+        ) {
+            return;
+        }
+
+        const deltaX = event.clientX - dragStartRef.current.x;
+        const leftOffset = Math.min(0, Math.max(deltaX, -90));
+
+        setDragVisual({
+            messageId: dragStartRef.current.message.id,
+            offsetX: leftOffset,
+        });
+    };
+
+    const onDragReplyEnd = (event) => {
+        if (!dragStartRef.current.active || !dragStartRef.current.message) return;
+        if (
+            dragStartRef.current.pointerId !== null &&
+            event.pointerId !== dragStartRef.current.pointerId
+        ) {
+            return;
+        }
+
+        const deltaX = dragStartRef.current.x - event.clientX;
+        const deltaY = Math.abs(dragStartRef.current.y - event.clientY);
+
+        if (deltaX > 60 && deltaY < 70) {
+            startReply(dragStartRef.current.message);
+        }
+
+        setDragVisual({ messageId: null, offsetX: 0 });
+
+        if (event.currentTarget?.releasePointerCapture) {
+            try {
+                event.currentTarget.releasePointerCapture(event.pointerId);
+            } catch {
+                // Ignore if pointer capture is already released.
+            }
+        }
+
+        dragStartRef.current = {
+            x: 0,
+            y: 0,
+            message: null,
+            pointerId: null,
+            active: false,
+        };
+    };
+
+    const onDragReplyCancel = () => {
+        setDragVisual({ messageId: null, offsetX: 0 });
+        dragStartRef.current = {
+            x: 0,
+            y: 0,
+            message: null,
+            pointerId: null,
+            active: false,
+        };
+    };
 
     function openChat() {
         if (window.innerWidth <= 768) {
@@ -126,21 +513,31 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
     }
 
 
-    const sendMessage = () => {
-        const text = content.trim();
-        if (!text) return false;
+    const sendMessage = (messageText = content, options = {}) => {
+        const attachments = options.attachments || [];
+        const text = (messageText || "").trim();
+        if (!text && !attachments.length) return false;
 
         const now = Date.now();
         if (
             lastSentRef.current.text === text &&
-            now - lastSentRef.current.ts < 800
+            now - lastSentRef.current.ts < 800 &&
+            !attachments.length
         ) {
             return false;
         }
 
         if (socket && socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({ text }));
+            const payload = { text };
+            if (replyingTo?.id) {
+                payload.reply_to = replyingTo.id;
+            }
+            if (attachments.length) {
+                payload.attachments = attachments;
+            }
+            socket.send(JSON.stringify(payload));
             lastSentRef.current = { text, ts: now };
+            setReplyingTo(null);
 
             const textarea = document.querySelector("textarea");
             if (textarea) {
@@ -151,6 +548,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
 
         return false;
     }
+
 
     useEffect(() => {
     const handleResize = () => {
@@ -183,6 +581,37 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
     useEffect(() => {
         scrollToBottom();
     }, [messages]);
+
+    useEffect(() => {
+        const closeReplyMenu = () => {
+            setReplyMenu((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+        };
+
+        window.addEventListener("click", closeReplyMenu);
+        return () => window.removeEventListener("click", closeReplyMenu);
+    }, []);
+
+    useEffect(() => {
+        setReplyMenu({ visible: false, x: 0, y: 0, messageId: null });
+        setReplyingTo(null);
+    }, [uuid]);
+
+    useEffect(() => {
+        attachmentsSnapshotRef.current = selectedAttachments;
+    }, [selectedAttachments]);
+
+    useEffect(() => {
+        return () => {
+            attachmentUploadsRef.current.forEach((upload) => {
+                try {
+                    upload.abort();
+                } catch {
+                    // Ignore upload abort errors on unmount.
+                }
+            });
+            cleanupAttachmentPreviews(attachmentsSnapshotRef.current);
+        };
+    }, []);
 
     useEffect(() =>{
         setLiveMessage(messages || [])
@@ -348,6 +777,36 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                 <Navigate to="/" replace />
             ) : (
                 <>
+                    {fullscreenImageUrl ? (
+                        <div className="image-lightbox-backdrop" onClick={closeFullscreenImage}>
+                            <div className="image-lightbox-content" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                    type="button"
+                                    className="image-lightbox-close"
+                                    onClick={closeFullscreenImage}
+                                >
+                                    <X size={24} />
+                                </button>
+                                <img src={fullscreenImageUrl} alt="full-view" className="image-lightbox-image" />
+                            </div>
+                        </div>
+                    ) : null}
+                    {fullscreenVideoUrl ? (
+                        <div className="image-lightbox-backdrop" onClick={closeFullscreenVideo}>
+                            <div className="image-lightbox-content" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                    type="button"
+                                    className="image-lightbox-close"
+                                    onClick={closeFullscreenVideo}
+                                >
+                                    <X size={24} />
+                                </button>
+                                <video className="image-lightbox-video" controls autoPlay>
+                                    <source src={fullscreenVideoUrl} />
+                                </video>
+                            </div>
+                        </div>
+                    ) : null}
                     {/* Group modal */}
                     <div className="modal fade" id="groupModal" aria-hidden="true" aria-labelledby="groupModal" tabIndex={-1}>
                         <div className="modal-dialog modal-dialog-scrollable modal-fullscreen-md-down ">
@@ -549,12 +1008,12 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                     <button type="button" className="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                                 </div>
                                 <div className="modal-body">
-                                    <div class="container">
-                                        <div class="row">
-                                            <div class="col-1 me-4">
+                                    <div className="container">
+                                        <div className="row">
+                                            <div className="col-1 me-4">
                                                 <InfoCircle style={{width:"30px" ,height:"30px"}}/>
                                             </div>
-                                            <div class="col-8">
+                                            <div className="col-8">
                                                 <input
                                                     type="text"
                                                     value={bio}
@@ -716,7 +1175,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                             <Search size={20} />
                                         </button>
                                         :
-                                        <button type="button" class="btn btn-secondary d-flex align-items-center justify-content-center rounded-2 ms-0" style={{width:"35px",height:"35px"}}>
+                                        <button type="button" className="btn btn-secondary d-flex align-items-center justify-content-center rounded-2 ms-0" style={{width:"35px",height:"35px"}}>
                                             <Search size={20}/>
                                         </button>
                                     }
@@ -814,9 +1273,14 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                             <div/>
                             }
                             <div className="messages">
-                                {liveMessage?.map((message) => (
-                                    user.id === message.sender.id ?
-                                        <div className="message sent">
+                                {liveMessage?.map((message) => {
+                                    const replyTarget = resolveReplyTarget(message);
+                                    const isMyMessage = user.id === message.sender.id;
+                                    const isDraggingThis =
+                                        dragVisual.messageId === message.id && dragStartRef.current.active;
+
+                                    return isMyMessage ? (
+                                        <div className="message sent" key={message.id}>
                                             {message.sender.profile_url ? (
                                                 <a role="button" data-bs-toggle="modal" data-bs-target={`#${message.sender.id}`}>
                                                     <img src={message.sender.profile_url} className="avatar"   />
@@ -826,38 +1290,337 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                                     <PersonCircle className="avatar" />
                                                 </a>
                                             )}
-                                            <div className="message-bubble">
+                                            <div
+                                                className={`message-bubble ${isDraggingThis ? "swiping" : ""}`}
+                                                style={{
+                                                    transform: isDraggingThis
+                                                        ? `translateX(${dragVisual.offsetX}px)`
+                                                        : "translateX(0)",
+                                                }}
+                                                onPointerDown={(e) => onDragReplyStart(e, message)}
+                                                onPointerMove={onDragReplyMove}
+                                                onPointerUp={onDragReplyEnd}
+                                                onPointerCancel={onDragReplyCancel}
+                                            >
+                                                    {replyTarget && (
+                                                        <div className="reply-preview">
+                                                            <div className="reply-nickname">
+                                                                {replyTarget?.sender?.nickname || "Unknown"}
+                                                            </div>
+                                                            <div className="reply-content">
+                                                                {truncatePreviewText(replyTarget?.content, 60)}
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 <div className="message-header">
                                                     <span className="nickname">{message?.sender.nickname}</span>
                                                     <span className="time">{prettyDate(message?.created_at)}</span>
                                                 </div>
-                                                <div className="message-content">
+                                                <div
+                                                    className="message-content"
+                                                    onClick={(e) => openReplyMenu(e, message)}
+                                                >
                                                     {message?.content}
                                                 </div>
+                                                {message?.media_files?.length ? (
+                                                    <div className="message-media-list">
+                                                        {message.media_files.map((media) => {
+                                                            const mediaUrl = media?.url || media?.file;
+                                                            const mediaKind = media?.kind;
+                                                            if (!mediaUrl) return null;
+                                                            if (mediaKind === "image" || isImageMedia(mediaUrl)) {
+                                                                return (
+                                                                    <button
+                                                                        type="button"
+                                                                        className="message-media-image-btn"
+                                                                        key={media.id || mediaUrl}
+                                                                        onClick={() => openFullscreenImage(mediaUrl)}
+                                                                    >
+                                                                        <img src={mediaUrl} alt="attachment" className="message-media-preview" />
+                                                                    </button>
+                                                                );
+                                                            }
+                                                            if (mediaKind === "video" || isVideoMedia(mediaUrl)) {
+                                                                return (
+                                                                    <button
+                                                                        type="button"
+                                                                        className="message-media-image-btn"
+                                                                        key={media.id || mediaUrl}
+                                                                        onClick={() => openFullscreenVideo(mediaUrl)}
+                                                                    >
+                                                                        <video className="message-media-preview" muted>
+                                                                            <source src={mediaUrl} />
+                                                                        </video>
+                                                                    </button>
+                                                                );
+                                                            }
+                                                            return (
+                                                                <a
+                                                                    href={mediaUrl}
+                                                                    target="_blank"
+                                                                    rel="noreferrer"
+                                                                    key={media.id || mediaUrl}
+                                                                    className="message-media-file"
+                                                                >
+                                                                    {mediaUrl.split("/").pop()}
+                                                                </a>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                ) : null}
+                                                {message?.upload_status ? (
+                                                    <div
+                                                        className={`upload-status ${
+                                                            message.upload_status === "Upload failed" ? "error" : ""
+                                                        }`}
+                                                    >
+                                                        {message.upload_status}
+                                                    </div>
+                                                ) : null}
                                             </div>
                                         </div>
-                                        :
-                                        <div className="message received">
+                                    ) : (
+                                        <div className="message received" key={message.id}>
                                             {message.sender.profile_url ? (
                                                 <img src={message.sender.profile_url} className="avatar" />
                                             ) : (
                                                 <PersonCircle size={35} />
                                             )}
-                                            <div className="message-bubble">
+                                            <div
+                                                className={`message-bubble ${isDraggingThis ? "swiping" : ""}`}
+                                                style={{
+                                                    transform: isDraggingThis
+                                                        ? `translateX(${dragVisual.offsetX}px)`
+                                                        : "translateX(0)",
+                                                }}
+                                                onPointerDown={(e) => onDragReplyStart(e, message)}
+                                                onPointerMove={onDragReplyMove}
+                                                onPointerUp={onDragReplyEnd}
+                                                onPointerCancel={onDragReplyCancel}
+                                            >
+                                                {replyTarget && (
+                                                    <div className="reply-preview">
+                                                            <div className="reply-nickname">
+                                                                {replyTarget?.sender?.nickname || "Unknown"}
+                                                            </div>
+                                                            <div className="reply-content">
+                                                                {truncatePreviewText(replyTarget?.content, 60)}
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 <div className="message-header">
                                                     <span className="nickname">{message?.sender.nickname}</span>
                                                     <span className="time">{prettyDate(message?.created_at)}</span>
                                                 </div>
-                                                <div className="message-content">
+                                                <div
+                                                    className="message-content"
+                                                    onClick={(e) => openReplyMenu(e, message)}
+                                                >
                                                     {message?.content}
                                                 </div>
+                                                {message?.media_files?.length ? (
+                                                    <div className="message-media-list">
+                                                        {message.media_files.map((media) => {
+                                                            const mediaUrl = media?.url || media?.file;
+                                                            const mediaKind = media?.kind;
+                                                            if (!mediaUrl) return null;
+                                                            if (mediaKind === "image" || isImageMedia(mediaUrl)) {
+                                                                return (
+                                                                    <button
+                                                                        type="button"
+                                                                        className="message-media-image-btn"
+                                                                        key={media.id || mediaUrl}
+                                                                        onClick={() => openFullscreenImage(mediaUrl)}
+                                                                    >
+                                                                        <img src={mediaUrl} alt="attachment" className="message-media-preview" />
+                                                                    </button>
+                                                                );
+                                                            }
+                                                            if (mediaKind === "video" || isVideoMedia(mediaUrl)) {
+                                                                return (
+                                                                    <button
+                                                                        type="button"
+                                                                        className="message-media-image-btn"
+                                                                        key={media.id || mediaUrl}
+                                                                        onClick={() => openFullscreenVideo(mediaUrl)}
+                                                                    >
+                                                                        <video className="message-media-preview" muted>
+                                                                            <source src={mediaUrl} />
+                                                                        </video>
+                                                                    </button>
+                                                                );
+                                                            }
+                                                            return (
+                                                                <a
+                                                                    href={mediaUrl}
+                                                                    target="_blank"
+                                                                    rel="noreferrer"
+                                                                    key={media.id || mediaUrl}
+                                                                    className="message-media-file"
+                                                                >
+                                                                    {mediaUrl.split("/").pop()}
+                                                                </a>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                ) : null}
+                                                {message?.upload_status ? (
+                                                    <div
+                                                        className={`upload-status ${
+                                                            message.upload_status === "Upload failed" ? "error" : ""
+                                                        }`}
+                                                    >
+                                                        {message.upload_status}
+                                                    </div>
+                                                ) : null}
                                             </div>
                                         </div>
-                                    ))}
+                                    );
+                                })}
                                     <div ref={messagesEndRef} />
                             </div>
+                            {replyMenu.visible && (
+                                <div
+                                    className="message-action-menu"
+                                    style={{ left: `${replyMenu.x}px`, top: `${replyMenu.y}px` }}
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    <button
+                                        type="button"
+                                        className="message-action-item"
+                                        onClick={() => startReply(messagesById.get(String(replyMenu.messageId)))}
+                                    >
+                                        Reply
+                                    </button>
+                                </div>
+                            )}
                             {uuid ? (
                                 <>
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                className="d-none"
+                                multiple
+                                onChange={handleAttachmentSelection}
+                            />
+                            {attachmentModalOpen && (
+                                <div
+                                    className="attachment-modal-backdrop"
+                                    onClick={() => {
+                                        if (!isUploadingAttachments) {
+                                            closeAttachmentModal();
+                                        }
+                                    }}
+                                >
+                                    <div className="attachment-modal" onClick={(e) => e.stopPropagation()}>
+                                        <div className="attachment-modal-header">
+                                            <h5 className="m-0">Send Attachments</h5>
+                                            <button
+                                                type="button"
+                                                className="attachment-close-btn"
+                                                onClick={closeAttachmentModal}
+                                                disabled={isUploadingAttachments}
+                                            >
+                                                <X size={20} />
+                                            </button>
+                                        </div>
+
+                                        <div className="attachment-list">
+                                            {selectedAttachments.map((item) => (
+                                                <div className="attachment-item" key={item.id}>
+                                                    <div className="attachment-preview-wrap">
+                                                        {item.kind === "image" && item.previewUrl ? (
+                                                            <img
+                                                                src={item.previewUrl}
+                                                                alt={item.file.name}
+                                                                className="attachment-preview"
+                                                            />
+                                                        ) : null}
+                                                        {item.kind === "video" && item.previewUrl ? (
+                                                            <video
+                                                                src={item.previewUrl}
+                                                                className="attachment-preview"
+                                                                controls
+                                                            />
+                                                        ) : null}
+                                                        {item.kind === "file" ? (
+                                                            <div className="attachment-file-pill">FILE</div>
+                                                        ) : null}
+                                                    </div>
+                                                    <div className="attachment-meta">
+                                                        <div className="attachment-name">{item.file.name}</div>
+                                                        <div className="attachment-size">
+                                                            {formatBytes(item.file.size)}
+                                                        </div>
+                                                        <div className="attachment-progress-line">
+                                                            <div
+                                                                className={`attachment-progress-fill ${
+                                                                    item.status === "error" ? "is-error" : ""
+                                                                }`}
+                                                                style={{ width: `${item.progress}%` }}
+                                                            />
+                                                        </div>
+                                                        <div className="attachment-status-text">
+                                                            {item.status === "uploaded"
+                                                                ? "Uploaded"
+                                                                : item.status === "error"
+                                                                    ? item.error
+                                                                    : item.status === "uploading"
+                                                                        ? `Uploading ${item.progress}%`
+                                                                        : "Pending"}
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        className="attachment-remove-btn"
+                                                        onClick={() => removeAttachment(item.id)}
+                                                        disabled={isUploadingAttachments}
+                                                    >
+                                                        Remove
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        <div className="attachment-footer">
+                                            <textarea
+                                                className="attachment-text-input"
+                                                placeholder="Add a message..."
+                                                value={attachmentText}
+                                                onChange={(e) => setAttachmentText(e.target.value)}
+                                                disabled={isUploadingAttachments}
+                                            />
+                                            <div className="attachment-overall-progress">
+                                                <div className="attachment-overall-line">
+                                                    <div
+                                                        className="attachment-overall-fill"
+                                                        style={{ width: `${totalUploadProgress}%` }}
+                                                    />
+                                                </div>
+                                                <span>{totalUploadProgress}%</span>
+                                            </div>
+                                            <div className="attachment-footer-actions">
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-secondary"
+                                                    onClick={openAttachmentPicker}
+                                                    disabled={isUploadingAttachments}
+                                                >
+                                                    Add more
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-primary"
+                                                    onClick={uploadSelectedAttachments}
+                                                    disabled={!selectedAttachments.length || isUploadingAttachments}
+                                                >
+                                                    {isUploadingAttachments ? "Uploading..." : "Send files"}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                             <form className="chat-input" onSubmit={(e) => {
                                     e.preventDefault();
                                     if (sendMessage()) {
@@ -866,7 +1629,26 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                     const textarea = e.target.querySelector("textarea");
                                     if (textarea) textarea.focus();
                                     }}>
+                                        {replyingTo && (
+                                            <div className="replying-to-bar">
+                                                <div className="replying-to-text">
+                                                    <span className="replying-to-name">
+                                                        {replyingTo?.sender?.nickname || "Unknown"}
+                                                    </span>
+                                                    <span>{truncatePreviewText(replyingTo?.content, 60)}</span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    className="replying-to-close"
+                                                    onClick={() => setReplyingTo(null)}
+                                                >
+                                                    ×
+                                                </button>
+                                            </div>
+                                        )}
+                                        <div className="chat-input-row">
                                         <textarea
+                                        ref={textareaRef}
                                         placeholder="Type a message..."
                                         value={content}
                                         onChange={(e) => setContent(e.target.value)}
@@ -882,6 +1664,14 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                         className="d-flex justify-content-center align-items-center"
                                         style={{ backgroundColor: "#1b1d20" }}
                                         >
+                                        <button
+                                            type="button"
+                                            className="btn btn-secondary d-flex justify-content-center align-items-center rounded-pill me-2"
+                                            style={{ width: "50px", height: "35px" }}
+                                            onClick={openAttachmentPicker}
+                                        >
+                                            <Paperclip size={20} />
+                                        </button>
                                         {content ? (
                                             <button
                                             type="submit"
@@ -901,6 +1691,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                             <ArrowRightCircle size={40} />
                                             </button>
                                         )}
+                                        </div>
                                         </div>
                             </form>
                             </>

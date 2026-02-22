@@ -34,7 +34,7 @@ function Form({ route, method }) {
             <h2>Login</h2>
             <form id="multiStepForm" onSubmit={handleSubmit}>
                 <div className="form-group">
-                    <label for="username">Username</label>
+                    <label htmlFor="username">Username</label>
                     <input 
                         type="text"
                         value={username}
@@ -44,7 +44,7 @@ function Form({ route, method }) {
                     />
                 </div>
                 <div className="form-password" style={{ position: "relative" }}>
-                    <label for="password">Password </label>
+                    <label htmlFor="password">Password </label>
                     <input 
                         className="password"
                         type={showPassword ? "text" : "password"}
