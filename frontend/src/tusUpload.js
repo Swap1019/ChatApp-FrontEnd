@@ -1,6 +1,6 @@
 import * as tus from "tus-js-client";
 
-export function uploadWithTus(file, { onProgress, onSuccess, onError }) {
+export function uploadWithTus(file, { category, allowResume = true, onProgress, onSuccess, onError }) {
   const endpoint = import.meta.env.VITE_TUS_ENDPOINT;
 
   const upload = new tus.Upload(file, {
@@ -9,6 +9,7 @@ export function uploadWithTus(file, { onProgress, onSuccess, onError }) {
     metadata: {
       filename: file.name,
       filetype: file.type || "application/octet-stream",
+      ...(category ? { category } : {}),
     },
     onError: (err) => onError?.(err),
     onProgress: (uploaded, total) => {
@@ -20,6 +21,11 @@ export function uploadWithTus(file, { onProgress, onSuccess, onError }) {
       onSuccess?.({ uploadUrl: upload.url });
     },
   });
+
+  if (!allowResume) {
+    upload.start();
+    return upload;
+  }
 
   upload.findPreviousUploads().then((previous) => {
     if (previous.length) upload.resumeFromPreviousUpload(previous[0]);

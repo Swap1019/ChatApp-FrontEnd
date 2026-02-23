@@ -1,4 +1,4 @@
-import { PersonCircle, Person, InfoCircle, PeopleFill, People ,List ,Search, ArrowRightCircleFill, ArrowRightCircle, Paperclip, X} from 'react-bootstrap-icons';
+import { PersonCircle, Person, InfoCircle, PeopleFill, People ,List ,Search, ArrowRightCircleFill, ArrowRightCircle, Paperclip, X, ThreeDotsVertical, CameraFill} from 'react-bootstrap-icons';
 import { uploadWithTus } from '../tusUpload';
 import "bootstrap/dist/css/bootstrap.min.css";
 import "bootstrap/dist/js/bootstrap.bundle.min.js";
@@ -12,6 +12,17 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
     const [content, setContent] = useState("");
     const [searchUsers, setSearchUsers] = useState("");
     const [searchResults, setsearchResults] = useState([]);
+    const [contacts, setContacts] = useState([]);
+    const [isLoadingContacts, setIsLoadingContacts] = useState(false);
+    const [isContactActionLoading, setIsContactActionLoading] = useState(false);
+    const [groupName, setGroupName] = useState("");
+    const [groupProfile, setGroupProfile] = useState(null);
+    const [groupProfilePreview, setGroupProfilePreview] = useState("");
+    const [groupFlowMode, setGroupFlowMode] = useState("create");
+    const [groupMemberSearch, setGroupMemberSearch] = useState("");
+    const [groupSearchResults, setGroupSearchResults] = useState([]);
+    const [selectedGroupMembers, setSelectedGroupMembers] = useState([]);
+    const [isGroupSubmitting, setIsGroupSubmitting] = useState(false);
     const [currentConversationIsGroup, setCurrentConversationIsGroup] = useState([]);
     const [socket, setSocket] = useState("");
     const [userSocket, setUserSocket] = useState(null);
@@ -71,6 +82,46 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
     const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
     const wsBaseUrl =
         import.meta.env.VITE_WS_BASE_URL || wsProtocol + "://" + window.location.hostname + ":8000";
+    const apiBaseUrl =
+        import.meta.env.VITE_API_BASE_URL ||
+        import.meta.env.VITE_API_URL ||
+        window.location.protocol + "//" + window.location.hostname + ":8000";
+    const mediaBaseUrl =
+        import.meta.env.VITE_MEDIA_BASE_URL ||
+        apiBaseUrl;
+
+    function resolveUrl(url) {
+        if (!url) return "";
+        if (url.startsWith("http://127.0.0.1:8000/") || url.startsWith("http://localhost:8000/")) {
+            const path = url.replace(/^https?:\/\/(127\.0\.0\.1|localhost):8000/, "");
+            return `${mediaBaseUrl}${path.startsWith("/") ? path : `/${path}`}`;
+        }
+        if (
+            url.startsWith("http://") ||
+            url.startsWith("https://") ||
+            url.startsWith("data:") ||
+            url.startsWith("blob:")
+        ) {
+            return url;
+        }
+        if (url.startsWith("/")) {
+            return `${mediaBaseUrl}${url}`;
+        }
+        return `${mediaBaseUrl}/${url}`;
+    }
+
+    const contactIds = useMemo(() => new Set(contacts.map((item) => String(item?.contact?.id))), [contacts]);
+    const currentGroupMemberIds = useMemo(
+        () => new Set((members || []).map((member) => String(member?.id))),
+        [members]
+    );
+    const currentConversation = useMemo(
+        () => (liveConversations || []).find((conversation) => conversation?.id === uuid) || null,
+        [liveConversations, uuid]
+    );
+    const canManageGroup =
+        !!currentConversation?.is_group &&
+        (currentConversation?.viewer_is_creator || currentConversation?.viewer_is_admin);
 
     const handleChatClick = (conversation) => {
         setCurrentConversationIsGroup(conversation?.is_group || "");
@@ -105,6 +156,51 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
     function truncatePreviewText(text, maxLength = 60) {
         if (!text) return "";
         return text.length > maxLength ? text.slice(0, maxLength) + "..." : text;
+    }
+
+    function buildLastMessagePreview(conversation) {
+        const preview = conversation?.last_message;
+        if (!preview) return "";
+        const body = (preview.content || "").trim() || "Attachment";
+        const senderPrefix = preview.sender_nickname ? `${preview.sender_nickname}: ` : "";
+        return truncatePreviewText(`${senderPrefix}${body}`, 58);
+    }
+
+    function upsertConversation(nextConversation, moveToTop = false) {
+        if (!nextConversation?.id) return;
+        setLiveConversations((prev) => {
+            const normalized = {
+                ...nextConversation,
+                unread_count: Number(nextConversation.unread_count || 0),
+            };
+            const existingIndex = prev.findIndex((c) => c.id === normalized.id);
+            let updatedList = prev;
+            if (existingIndex >= 0) {
+                updatedList = prev.map((c) => (c.id === normalized.id ? { ...c, ...normalized } : c));
+            } else {
+                updatedList = [...prev, normalized];
+            }
+
+            if (moveToTop) {
+                const target = updatedList.find((c) => c.id === normalized.id);
+                const rest = updatedList.filter((c) => c.id !== normalized.id);
+                return target ? [target, ...rest] : updatedList;
+            }
+            return updatedList;
+        });
+    }
+
+    function markConversationRead(conversationId = uuid) {
+        const targetId = conversationId || uuid;
+        if (!targetId) return;
+        const ws = userSocketRef.current;
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        ws.send(
+            JSON.stringify({
+                type: "mark_conversation_read",
+                conversation_id: targetId,
+            })
+        );
     }
 
     const totalUploadProgress = useMemo(() => {
@@ -217,6 +313,16 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
 
     function isVideoMedia(url) {
         return /\.(mp4|webm|ogg|mov|mkv|m4v)$/i.test(url || "");
+    }
+
+    function getMediaDisplayName(media, mediaUrl) {
+        if (media?.name) return media.name;
+        const raw = (mediaUrl || "").split("/").pop() || "attachment";
+        try {
+            return decodeURIComponent(raw);
+        } catch {
+            return raw;
+        }
     }
 
     function openFullscreenImage(url) {
@@ -512,6 +618,191 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
         }
     }
 
+    const getContacts = async () => {
+        setIsLoadingContacts(true);
+        try {
+            const { data } = await api.get("/chat/contacts/");
+            setContacts(Array.isArray(data) ? data : []);
+        } catch (err) {
+            console.error("Failed to fetch contacts", err);
+        } finally {
+            setIsLoadingContacts(false);
+        }
+    };
+
+    const addToContacts = async (targetUserId) => {
+        if (!targetUserId || isContactActionLoading) return;
+        if (String(targetUserId) === String(user?.id)) return;
+        if (contactIds.has(String(targetUserId))) return;
+
+        setIsContactActionLoading(true);
+        try {
+            const { data } = await api.post("/chat/contacts/", { user_id: targetUserId });
+            if (data?.contact) {
+                setContacts((prev) => {
+                    const exists = prev.some(
+                        (item) => String(item?.contact?.id) === String(data.contact.contact?.id)
+                    );
+                    return exists ? prev : [data.contact, ...prev];
+                });
+            } else {
+                await getContacts();
+            }
+            alert(data?.detail || "Contact added.");
+        } catch (err) {
+            const detail = err?.response?.data?.detail || "Could not add contact.";
+            alert(detail);
+        } finally {
+            setIsContactActionLoading(false);
+        }
+    };
+
+    const removeFromContacts = async (targetUserId) => {
+        if (!targetUserId || isContactActionLoading) return;
+        setIsContactActionLoading(true);
+        try {
+            await api.delete(`/chat/contacts/${targetUserId}/`);
+            setContacts((prev) =>
+                prev.filter((item) => String(item?.contact?.id) !== String(targetUserId))
+            );
+        } catch (err) {
+            const detail = err?.response?.data?.detail || "Could not remove contact.";
+            alert(detail);
+        } finally {
+            setIsContactActionLoading(false);
+        }
+    };
+
+    const closeBootstrapModal = (modalId) => {
+        const modalNode = document.getElementById(modalId);
+        if (!modalNode || !window.bootstrap?.Modal) return;
+        const instance =
+            window.bootstrap.Modal.getInstance(modalNode) ||
+            new window.bootstrap.Modal(modalNode);
+        instance.hide();
+    };
+
+    const resetGroupFlow = () => {
+        if (groupProfilePreview) {
+            URL.revokeObjectURL(groupProfilePreview);
+        }
+        setGroupName("");
+        setGroupProfile(null);
+        setGroupProfilePreview("");
+        setGroupMemberSearch("");
+        setGroupSearchResults([]);
+        setSelectedGroupMembers([]);
+        setIsGroupSubmitting(false);
+    };
+
+    const openCreateGroupFlow = () => {
+        resetGroupFlow();
+        setGroupFlowMode("create");
+    };
+
+    const openAddMembersFlow = async () => {
+        setGroupFlowMode("add-members");
+        setGroupMemberSearch("");
+        setGroupSearchResults([]);
+        setSelectedGroupMembers([]);
+        await getmembers();
+    };
+
+    const handleGroupProfileChange = (event) => {
+        const file = event.target.files?.[0];
+        if (groupProfilePreview) {
+            URL.revokeObjectURL(groupProfilePreview);
+        }
+        if (!file) {
+            setGroupProfile(null);
+            setGroupProfilePreview("");
+            return;
+        }
+        setGroupProfile(file);
+        setGroupProfilePreview(URL.createObjectURL(file));
+    };
+
+    const fileToDataUrl = (file) =>
+        new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(new Error("Could not read file."));
+            reader.readAsDataURL(file);
+        });
+
+    const toggleSelectedGroupMember = (member) => {
+        const memberId = String(member?.id || "");
+        if (!memberId || memberId === String(user?.id)) return;
+
+        setSelectedGroupMembers((prev) => {
+            const exists = prev.some((entry) => String(entry.id) === memberId);
+            if (exists) return prev.filter((entry) => String(entry.id) !== memberId);
+            return [...prev, member];
+        });
+    };
+
+    const searchUsersForGroup = async () => {
+        const query = groupMemberSearch.trim();
+        if (!query) {
+            setGroupSearchResults([]);
+            return;
+        }
+
+        try {
+            const { data } = await api.get(`/chat/search/users/?q=${query}`);
+            setGroupSearchResults(Array.isArray(data) ? data : []);
+        } catch (err) {
+            console.error("Failed to search users for group", err);
+        }
+    };
+
+    const submitGroupFlow = async () => {
+        if (isGroupSubmitting) return;
+        if (!userSocketRef.current || userSocketRef.current.readyState !== WebSocket.OPEN) {
+            alert("User websocket is not connected yet.");
+            return;
+        }
+        setIsGroupSubmitting(true);
+
+        try {
+            const memberIds = selectedGroupMembers.map((member) => String(member.id));
+            if (groupFlowMode === "add-members") {
+                if (!uuid) return;
+                userSocketRef.current.send(
+                    JSON.stringify({
+                        type: "add_group_members",
+                        conversation_id: uuid,
+                        member_ids: memberIds,
+                    })
+                );
+                closeBootstrapModal("groupMembersModal");
+                closeBootstrapModal("groupCreateModal");
+                resetGroupFlow();
+            } else {
+                let profileDataUrl = "";
+                if (groupProfile instanceof File) {
+                    profileDataUrl = await fileToDataUrl(groupProfile);
+                }
+                userSocketRef.current.send(
+                    JSON.stringify({
+                        type: "create_group_conversation",
+                        name: groupName || "",
+                        member_ids: memberIds,
+                        profile_data_url: profileDataUrl,
+                        profile_name: groupProfile?.name || "",
+                    })
+                );
+                closeBootstrapModal("groupMembersModal");
+                closeBootstrapModal("groupCreateModal");
+                resetGroupFlow();
+            }
+        } catch (err) {
+            const detail = err?.response?.data?.detail || "Group action failed.";
+            alert(detail);
+            setIsGroupSubmitting(false);
+        }
+    };
+
 
     const sendMessage = (messageText = content, options = {}) => {
         const attachments = options.attachments || [];
@@ -565,7 +856,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
     useEffect(() => {
         if (user) {
         setProfile(user.profile || "");
-        setProfilePreview(user.profile_url|| "");
+        setProfilePreview(resolveUrl(user.profile_url || ""));
         setUserName(user.username || "");
         setEmail(user.email || "");
         setNickName(user.nickname || "");
@@ -573,7 +864,8 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
         setLastName(user.last_name || "");
         setBio(user.bio || "");
         setBackGroundImage(user.background_image || "");
-        setBackgroundPreview(user.background_image_url || "");
+        setBackgroundPreview(resolveUrl(user.background_image_url || ""));
+        getContacts();
         }
     }, [user]);
 
@@ -621,6 +913,12 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
         setLiveConversations(conversations || [])
     }, [conversations]);
 
+    useEffect(() => {
+        if (!uuid || !userSocket) return;
+        if (userSocket.readyState !== WebSocket.OPEN) return;
+        markConversationRead(uuid);
+    }, [uuid, userSocket]);
+
 
     useEffect(() => {
         if (!uuid) return;
@@ -654,12 +952,16 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
 
         ws.onopen = () => {
             console.log("Websocket opened");
+            markConversationRead(uuid);
         };
 
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
             if (data.message) {
                 setLiveMessage((prev) => [...prev, data.message]);
+                if (String(data.message?.sender?.id) !== String(user?.id)) {
+                    markConversationRead(uuid);
+                }
             }
         };
 
@@ -720,22 +1022,14 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
         const data = JSON.parse(event.data);
 
         if (data.type === "new_conversation") {
-            setLiveConversations((prev) => {
-                const exists = prev.some((c) => c.id === data.conversation.id);
-                if (!exists) return [...prev, data.conversation];
-                return prev;
-            });
+            upsertConversation(data.conversation, false);
         }
 
         if (data.type === "private_conversation_ready") {
             const conversation = data.conversation;
             if (!conversation?.id) return;
 
-            setLiveConversations((prev) => {
-                const exists = prev.some((c) => c.id === conversation.id);
-                if (!exists) return [...prev, conversation];
-                return prev;
-            });
+            upsertConversation(conversation, true);
 
             setCurrentConversationIsGroup(conversation?.is_group || "");
             setChatName(conversation?.name || "");
@@ -744,7 +1038,43 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
             navigate(`/${conversation?.id}`);
         }
 
+        if (data.type === "group_conversation_ready") {
+            const conversation = data.conversation;
+            if (!conversation?.id) {
+                setIsGroupSubmitting(false);
+                return;
+            }
+            upsertConversation(conversation, true);
+            setCurrentConversationIsGroup(conversation?.is_group || true);
+            setChatName(conversation?.name || "");
+            setChatImg(conversation?.profile_url || "");
+            closeBootstrapModal("groupMembersModal");
+            closeBootstrapModal("groupCreateModal");
+            resetGroupFlow();
+            setIsGroupSubmitting(false);
+            openChat();
+            navigate(`/${conversation?.id}`);
+        }
+
+        if (data.type === "group_members_added") {
+            if (data?.conversation) {
+                upsertConversation(data.conversation, false);
+            }
+            closeBootstrapModal("groupMembersModal");
+            resetGroupFlow();
+            setIsGroupSubmitting(false);
+            getmembers();
+            if (data?.detail) {
+                alert(data.detail);
+            }
+        }
+
+        if (data.type === "conversation_update" && data.conversation) {
+            upsertConversation(data.conversation, true);
+        }
+
         if (data.type === "error") {
+            setIsGroupSubmitting(false);
             console.error(data.detail || "WebSocket request failed");
         }
     };
@@ -768,7 +1098,6 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
     }, [user?.id, navigate, wsBaseUrl]);
     useEffect(() => {
         scrollToBottom();
-        console.log(liveMessage)
     }, [liveMessage]);
 
     return (
@@ -787,7 +1116,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                 >
                                     <X size={24} />
                                 </button>
-                                <img src={fullscreenImageUrl} alt="full-view" className="image-lightbox-image" />
+                                <img loading="lazy" src={fullscreenImageUrl} alt="full-view" className="image-lightbox-image" />
                             </div>
                         </div>
                     ) : null}
@@ -813,7 +1142,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                             <div className="modal-content theme-gray">
                                 <div className="modal-header">
                                     {chatImg ? 
-                                        <img src={chatImg} alt="Profile" id="chatHeaderImg" className="m-0 me-2 avatar" style={{width:"60px",height:"60px"}} />
+                                        <img loading="lazy" src={resolveUrl(chatImg)} alt="Profile" id="chatHeaderImg" className="m-0 me-2 avatar" style={{width:"60px",height:"60px"}} />
                                         :
                                         <People size={60} className="border border-white rounded-circle me-2"/>
                                     }
@@ -830,7 +1159,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                             <div className="row p-3 user-row">
                                                 <div className="col user">
                                                     {member.profile_url ? (
-                                                        <img className="avatar me-3" src={member.profile_url} alt="Profile" style={{width: "50px" ,height:"50px"}} />
+                                                        <img loading="lazy" className="avatar me-3" src={resolveUrl(member.profile_url)} alt="Profile" style={{width: "50px" ,height:"50px"}} />
                                                     ) : (
                                                         <PersonCircle className="avatar me-3" style={{width: "50px" ,height:"50px"}} />
                                                     )}
@@ -853,7 +1182,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                         <div data-bs-target="#groupModal" data-bs-toggle="modal" className="me-2 user-modal-back-button">←</div>
                                         <h1 className="modal-title fs-5" id="exampleModalToggleLabel2">        
                                             {member.profile_url ? (
-                                                <img className="avatar me-3" src={member.profile_url} alt="Profile" style={{width: "60px" ,height:"60px"}} />
+                                                <img loading="lazy" className="avatar me-3" src={resolveUrl(member.profile_url)} alt="Profile" style={{width: "60px" ,height:"60px"}} />
                                             ) : (
                                                 <PersonCircle className="avatar me-3" style={{width: "50px" ,height:"50px"}} />
                                             )}
@@ -892,9 +1221,22 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                     </div>
 
                                     <div className="modal-footer">
-                                        <div className="add-to-contacts p-2">
-                                            Add To Contacts
-                                        </div>
+                                        <button
+                                            type="button"
+                                            className={`add-to-contacts p-2 ${
+                                                contactIds.has(String(member.id)) ? "remove-contact" : ""
+                                            }`}
+                                            disabled={isContactActionLoading}
+                                            onClick={() =>
+                                                contactIds.has(String(member.id))
+                                                    ? removeFromContacts(member.id)
+                                                    : addToContacts(member.id)
+                                            }
+                                        >
+                                            {contactIds.has(String(member.id))
+                                                ? "Remove From Contacts"
+                                                : "Add To Contacts"}
+                                        </button>
                                         <div className="user-block p-2">
                                             Block User
                                         </div>
@@ -911,7 +1253,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                     <div className="modal-header">
                                         <h1 className="modal-title fs-5" id="exampleModalToggleLabel2">        
                                             {privateUser?.profile_url ? (
-                                                <img className="avatar me-3" src={privateUser?.profile_url} alt="Profile" style={{width: "60px" ,height:"60px"}} />
+                                                <img loading="lazy" className="avatar me-3" src={resolveUrl(privateUser?.profile_url)} alt="Profile" style={{width: "60px" ,height:"60px"}} />
                                             ) : (
                                                 <PersonCircle className="avatar me-3" style={{width: "50px" ,height:"50px"}} />
                                             )}
@@ -950,9 +1292,25 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                     </div>
 
                                     <div className="modal-footer">
-                                        <div className="add-to-contacts p-2">
-                                            Add To Contacts
-                                        </div>
+                                        <button
+                                            type="button"
+                                            className={`add-to-contacts p-2 ${
+                                                contactIds.has(String(privateUser?.id)) ? "remove-contact" : ""
+                                            }`}
+                                            disabled={
+                                                isContactActionLoading ||
+                                                !privateUser?.id
+                                            }
+                                            onClick={() =>
+                                                contactIds.has(String(privateUser?.id))
+                                                    ? removeFromContacts(privateUser?.id)
+                                                    : addToContacts(privateUser?.id)
+                                            }
+                                        >
+                                            {contactIds.has(String(privateUser?.id))
+                                                ? "Remove From Contacts"
+                                                : "Add To Contacts"}
+                                        </button>
                                         <div className="user-block p-2">
                                             Block User
                                         </div>
@@ -960,6 +1318,243 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                 </div>
                             </div>
                         </div>
+
+                    {/* Group create step 1 */}
+                    <div className="modal fade" id="groupCreateModal" aria-hidden="true" tabIndex={-1}>
+                        <div className="modal-dialog modal-dialog-centered modal-fullscreen-md-down">
+                            <div className="modal-content theme-gray">
+                                <div className="modal-header">
+                                    <h1 className="modal-title fs-5">Create Group</h1>
+                                    <button
+                                        type="button"
+                                        className="btn-close btn-close-white"
+                                        data-bs-dismiss="modal"
+                                        aria-label="Close"
+                                        onClick={resetGroupFlow}
+                                    />
+                                </div>
+                                <div className="modal-body">
+                                    <div className="group-create-head">
+                                        <label htmlFor="groupProfileInput" className="group-profile-picker" role="button">
+                                            {groupProfilePreview ? (
+                                                <img loading="lazy" src={groupProfilePreview}
+                                                    alt="group profile preview"
+                                                    className="group-profile-preview"
+                                                />
+                                            ) : (
+                                                <span className="group-profile-placeholder">
+                                                    <CameraFill size={20} />
+                                                </span>
+                                            )}
+                                        </label>
+                                        <input
+                                            id="groupProfileInput"
+                                            type="file"
+                                            className="d-none"
+                                            accept="image/*"
+                                            onChange={handleGroupProfileChange}
+                                        />
+                                        <div className="group-name-wrap">
+                                            <label className="form-label text-light">Group Name (optional)</label>
+                                            <input
+                                                type="text"
+                                                className="form-control group-name-input"
+                                                value={groupName}
+                                                onChange={(e) => setGroupName(e.target.value)}
+                                                placeholder="Type group name..."
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="modal-footer">
+                                    <button
+                                        type="button"
+                                        className="btn btn-primary"
+                                        data-bs-target="#groupMembersModal"
+                                        data-bs-toggle="modal"
+                                        onClick={() => setGroupFlowMode("create")}
+                                    >
+                                        Next
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Group members step */}
+                    <div className="modal fade" id="groupMembersModal" aria-hidden="true" tabIndex={-1}>
+                        <div className="modal-dialog modal-dialog-centered modal-fullscreen-md-down">
+                            <div className="modal-content theme-gray">
+                                <div className="modal-header">
+                                    <h1 className="modal-title fs-5">
+                                        {groupFlowMode === "add-members" ? "Add Members" : "Create Group - Members"}
+                                    </h1>
+                                    <button
+                                        type="button"
+                                        className="btn-close btn-close-white"
+                                        data-bs-dismiss="modal"
+                                        aria-label="Close"
+                                        onClick={resetGroupFlow}
+                                    />
+                                </div>
+                                <div className="modal-body">
+                                    <div className="group-selected-members mb-3">
+                                        {selectedGroupMembers.length ? (
+                                            selectedGroupMembers.map((member) => (
+                                                <button
+                                                    key={member.id}
+                                                    type="button"
+                                                    className="group-member-chip"
+                                                    onClick={() => toggleSelectedGroupMember(member)}
+                                                >
+                                                    {member.nickname || member.username || "User"} ×
+                                                </button>
+                                            ))
+                                        ) : (
+                                            <p className="text-secondary m-0">No members selected yet.</p>
+                                        )}
+                                    </div>
+
+                                    <div className="group-search-wrap mb-3">
+                                        <input
+                                            type="text"
+                                            className="form-control group-search-input"
+                                            value={groupMemberSearch}
+                                            onChange={(e) => {
+                                                const value = e.target.value;
+                                                setGroupMemberSearch(value);
+                                                if (!value.trim()) {
+                                                    setGroupSearchResults([]);
+                                                }
+                                            }}
+                                            placeholder="Search users..."
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter") {
+                                                    e.preventDefault();
+                                                    searchUsersForGroup();
+                                                }
+                                            }}
+                                        />
+                                        <button
+                                            type="button"
+                                            className={`btn group-search-btn d-flex justify-content-center align-items-center ${
+                                                groupMemberSearch.trim() ? "is-active" : ""
+                                            }`}
+                                            onClick={searchUsersForGroup}
+                                        >
+                                            <Search size={18} />
+                                        </button>
+                                    </div>
+
+                                    {groupMemberSearch.trim() ? (
+                                        <>
+                                            <h6 className="text-light">Search Results</h6>
+                                            <div className="group-user-list">
+                                                {groupSearchResults.length ? (
+                                                    groupSearchResults.map((result) => {
+                                                        const resultId = String(result?.id || "");
+                                                        const isSelf = resultId === String(user?.id);
+                                                        const isSelected = selectedGroupMembers.some(
+                                                            (member) => String(member.id) === resultId
+                                                        );
+                                                        const alreadyInGroup =
+                                                            groupFlowMode === "add-members" &&
+                                                            currentGroupMemberIds.has(resultId);
+                                                        if (!resultId || isSelf) return null;
+                                                        return (
+                                                            <div key={result.id} className="group-user-row">
+                                                                <div className="d-flex align-items-center">
+                                                                    {result?.profile_url ? (
+                                                                        <img loading="lazy" src={resolveUrl(result.profile_url)} alt="user" className="avatar me-2" />
+                                                                    ) : (
+                                                                        <PersonCircle className="avatar me-2" />
+                                                                    )}
+                                                                    <span>{result?.nickname || result?.username || "Unknown"}</span>
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    className="btn btn-sm btn-outline-info"
+                                                                    disabled={alreadyInGroup}
+                                                                    onClick={() => toggleSelectedGroupMember(result)}
+                                                                >
+                                                                    {alreadyInGroup
+                                                                        ? "Already in group"
+                                                                        : isSelected
+                                                                            ? "Selected"
+                                                                            : "Add"}
+                                                                </button>
+                                                            </div>
+                                                        );
+                                                    })
+                                                ) : (
+                                                    <p className="text-secondary m-0">Search for users</p>
+                                                )}
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <h6 className="text-light">Contacts</h6>
+                                            <div className="group-user-list">
+                                                {contacts.length ? (
+                                                    contacts.map((entry) => {
+                                                        const contact = entry?.contact;
+                                                        const contactId = String(contact?.id || "");
+                                                        const isSelected = selectedGroupMembers.some(
+                                                            (member) => String(member.id) === contactId
+                                                        );
+                                                        const alreadyInGroup =
+                                                            groupFlowMode === "add-members" &&
+                                                            currentGroupMemberIds.has(contactId);
+                                                        if (!contactId) return null;
+                                                        return (
+                                                            <div key={entry.id} className="group-user-row">
+                                                                <div className="d-flex align-items-center">
+                                                                    {contact?.profile_url ? (
+                                                                        <img loading="lazy" src={resolveUrl(contact.profile_url)} alt="contact" className="avatar me-2" />
+                                                                    ) : (
+                                                                        <PersonCircle className="avatar me-2" />
+                                                                    )}
+                                                                    <span>{contact?.nickname || "Unknown"}</span>
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    className="btn btn-sm btn-outline-info"
+                                                                    disabled={alreadyInGroup}
+                                                                    onClick={() => toggleSelectedGroupMember(contact)}
+                                                                >
+                                                                    {alreadyInGroup
+                                                                        ? "Already in group"
+                                                                        : isSelected
+                                                                            ? "Selected"
+                                                                            : "Add"}
+                                                                </button>
+                                                            </div>
+                                                        );
+                                                    })
+                                                ) : (
+                                                    <p className="text-secondary">No contacts yet.</p>
+                                                )}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                                <div className="modal-footer">
+                                    <button
+                                        type="button"
+                                        className="btn btn-primary"
+                                        disabled={isGroupSubmitting}
+                                        onClick={submitGroupFlow}
+                                    >
+                                        {isGroupSubmitting
+                                            ? "Saving..."
+                                            : groupFlowMode === "add-members"
+                                                ? "Add Members"
+                                                : "Create Group"}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
 
                     {/* User settings modal */}
                     <div className="modal fade " id="user-settings" aria-hidden="true" aria-labelledby="exampleModalToggleLabel2" tabIndex={-1} key="user-settings">
@@ -971,7 +1566,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                             <div data-mdb-ripple-init className="btn">
                                                 <label htmlFor="customFile2" style={{cursor:'pointer'}}>
                                                     {profilePreview ? ( 
-                                                        <img className="avatar me-3" src={profilePreview} alt="Profile" style={{width: "80px" ,height:"80px"}} id="selectedAvatar"/>
+                                                        <img loading="lazy" className="avatar me-3" src={profilePreview} alt="Profile" style={{width: "80px" ,height:"80px"}} id="selectedAvatar"/>
                                                     ) : (
                                                         <PersonCircle className="avatar me-3" style={{width: "80px" ,height:"80px"}} />
                                                     )}
@@ -1066,8 +1661,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                                 </p>
 
                                                 <label htmlFor="backgroundFile" style={{ cursor: 'pointer' }}>
-                                                    <img
-                                                        id="selectedBackground"
+                                                    <img loading="lazy" id="selectedBackground"
                                                         src={backgroundPreview || "https://res.cloudinary.com/dwfngrwoe/image/upload/v1758392790/default_hgh8gm.webp"}
                                                         alt="Background"
                                                         style={{
@@ -1193,19 +1787,85 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                     <a className="btn text-white d-flex justify-content-start account-control-button" role="button" data-bs-toggle="modal" data-bs-target={"#user-settings"}>
                                         <h5 className="ms-2 d-flex justify-content-center align-items-center">
                                             {user.profile_url ? 
-                                                <img className="avatar me-2" src={user.profile_url} />
+                                                <img loading="lazy" className="avatar me-2" src={resolveUrl(user.profile_url)} />
                                                 :
                                                 <PersonCircle size={40} className="border border-white rounded-circle me-2"/>
                                             }
                                             {user?.nickname}
                                         </h5>
                                     </a>
-                                    <a className="btn text-white d-flex justify-content-start mt-1 account-control-button" role="button" data-bs-toggle="modal" data-bs-target="#">
+                                    <a
+                                        className="btn text-white d-flex justify-content-start mt-1 account-control-button"
+                                        role="button"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#contacts-modal"
+                                    >
                                         <h5 className="ms-2 d-flex justify-content-center align-items-center">
                                             <Person size={40} className="border border-white rounded-circle me-2"/>
                                             Contacts
                                         </h5>
                                     </a>
+                                    <a
+                                        className="btn text-white d-flex justify-content-start mt-1 account-control-button"
+                                        role="button"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#groupCreateModal"
+                                        onClick={openCreateGroupFlow}
+                                    >
+                                        <h5 className="ms-2 d-flex justify-content-center align-items-center">
+                                            <PeopleFill size={40} className="border border-white rounded-circle me-2" />
+                                            Create Group
+                                        </h5>
+                                    </a>
+                                </div>
+                            </div>
+                            <div className="modal fade" id="contacts-modal" aria-hidden="true" tabIndex={-1}>
+                                <div className="modal-dialog modal-dialog-centered modal-fullscreen-md-down">
+                                    <div className="modal-content theme-gray">
+                                        <div className="modal-header">
+                                            <h1 className="modal-title fs-5">Contacts</h1>
+                                            <button
+                                                type="button"
+                                                className="btn-close btn-close-white"
+                                                data-bs-dismiss="modal"
+                                                aria-label="Close"
+                                            />
+                                        </div>
+                                        <div className="modal-body">
+                                            {isLoadingContacts ? (
+                                                <p>Loading contacts...</p>
+                                            ) : contacts.length ? (
+                                                contacts.map((entry) => (
+                                                    <div
+                                                        key={entry.id}
+                                                        className="d-flex justify-content-between align-items-center mb-3"
+                                                    >
+                                                        <div className="d-flex align-items-center">
+                                                            {entry?.contact?.profile_url ? (
+                                                                <img loading="lazy" className="avatar me-2"
+                                                                    src={resolveUrl(entry.contact.profile_url)}
+                                                                    alt="contact"
+                                                                />
+                                                            ) : (
+                                                                <PersonCircle className="avatar me-2" />
+                                                            )}
+                                                            <span>{entry?.contact?.nickname || "Unknown"}</span>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            className="contact-modal-remove-btn p-2"
+                                                            disabled={isContactActionLoading}
+                                                            onClick={() => removeFromContacts(entry?.contact?.id)}
+                                                        >
+                                                            Remove
+                                                        </button>
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <p>No contacts yet.</p>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                             <div className="chat-list">
@@ -1219,7 +1879,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                                 onClick={() => handleSearchUserClick(searchResult)}
                                             >
                                                 {searchResult.profile_url ? (
-                                                <img className="m-0" src={searchResult.profile_url} />
+                                                <img loading="lazy" className="m-0" src={resolveUrl(searchResult.profile_url)} />
                                                 ) : (
                                                 <People size={35} className="border border-white rounded-circle" />
                                                 )}
@@ -1241,12 +1901,23 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                         onClick={() => handleChatClick(conversation)}
                                     >
                                         {conversation.profile_url ? (
-                                        <img className="m-0" src={conversation.profile_url} />
+                                        <img loading="lazy" className="m-0" src={resolveUrl(conversation.profile_url)} />
                                         ) : (
                                         <People size={35} className="border border-white rounded-circle" />
                                         )}
-
-                                        <span className="ms-2">{conversation?.name}</span>
+                                        <div className="chat-item-meta ms-2">
+                                            <div className="chat-item-name-row">
+                                                <span className="chat-item-name">{conversation?.name}</span>
+                                                {Number(conversation?.unread_count || 0) > 0 ? (
+                                                    <span className="chat-unread-badge">
+                                                        {conversation.unread_count}
+                                                    </span>
+                                                ) : null}
+                                            </div>
+                                            <div className="chat-item-preview">
+                                                {buildLastMessagePreview(conversation)}
+                                            </div>
+                                        </div>
                                     </div>
                                     ))
                                 )}
@@ -1254,20 +1925,45 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                         </div>
 
                         {/* Chat content */}
-                        <div className="chat-content" id="chatContent" style={{ backgroundImage: `url(${user?.background_image_url ? user.background_image_url : "https://res.cloudinary.com/dwfngrwoe/image/upload/v1758392790/default_hgh8gm.webp"})`}}>
+                        <div className="chat-content" id="chatContent" style={{ backgroundImage: `url(${user?.background_image_url ? resolveUrl(user.background_image_url) : "https://res.cloudinary.com/dwfngrwoe/image/upload/v1758392790/default_hgh8gm.webp"})`}}>
                             {chatName ? 
                             <div className="chat-header">
                                 {/* Group modal button */}
                                 <button id="backBtn" onClick={backToChats}>←</button>
-                                <div type="button" data-bs-toggle="modal" data-bs-target={currentConversationIsGroup ? "#groupModal" : "#private-user-modal"} onClick={getmembers}>
+                                <div className="chat-header-main" type="button" data-bs-toggle="modal" data-bs-target={currentConversationIsGroup ? "#groupModal" : "#private-user-modal"} onClick={getmembers}>
                                     {chatImg ? 
-                                        <img src={chatImg} alt="Profile" id="chatHeaderImg" className="m-0" />
+                                        <img loading="lazy" src={resolveUrl(chatImg)} alt="Profile" id="chatHeaderImg" className="m-0" />
                                         :
                                         <People size={35} className="border border-white rounded-circle"/>
                                     }
                                     
                                     <span id="chatName" className="ms-2">{chatName}</span>
                                 </div>
+                                {canManageGroup ? (
+                                    <div className="dropdown ms-auto">
+                                        <button
+                                            type="button"
+                                            className="btn btn-sm btn-outline-light group-manage-btn"
+                                            data-bs-toggle="dropdown"
+                                            aria-expanded="false"
+                                        >
+                                            <ThreeDotsVertical size={18} />
+                                        </button>
+                                        <ul className="dropdown-menu dropdown-menu-end">
+                                            <li>
+                                                <button
+                                                    type="button"
+                                                    className="dropdown-item"
+                                                    data-bs-toggle="modal"
+                                                    data-bs-target="#groupMembersModal"
+                                                    onClick={openAddMembersFlow}
+                                                >
+                                                    Add Members
+                                                </button>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                ) : null}
                             </div>
                             :
                             <div/>
@@ -1283,7 +1979,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                         <div className="message sent" key={message.id}>
                                             {message.sender.profile_url ? (
                                                 <a role="button" data-bs-toggle="modal" data-bs-target={`#${message.sender.id}`}>
-                                                    <img src={message.sender.profile_url} className="avatar"   />
+                                                    <img loading="lazy" src={resolveUrl(message.sender.profile_url)} className="avatar"   />
                                                 </a>
                                             ) : (
                                                 <a role="button" data-bs-toggle="modal" data-bs-target={`#${message.sender.id}`}>
@@ -1336,7 +2032,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                                                         key={media.id || mediaUrl}
                                                                         onClick={() => openFullscreenImage(mediaUrl)}
                                                                     >
-                                                                        <img src={mediaUrl} alt="attachment" className="message-media-preview" />
+                                                                        <img loading="lazy" src={resolveUrl(mediaUrl)} alt="attachment" className="message-media-preview" />
                                                                     </button>
                                                                 );
                                                             }
@@ -1349,7 +2045,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                                                         onClick={() => openFullscreenVideo(mediaUrl)}
                                                                     >
                                                                         <video className="message-media-preview" muted>
-                                                                            <source src={mediaUrl} />
+                                                                            <source src={resolveUrl(mediaUrl)} />
                                                                         </video>
                                                                     </button>
                                                                 );
@@ -1362,7 +2058,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                                                     key={media.id || mediaUrl}
                                                                     className="message-media-file"
                                                                 >
-                                                                    {mediaUrl.split("/").pop()}
+                                                                    {getMediaDisplayName(media, mediaUrl)}
                                                                 </a>
                                                             );
                                                         })}
@@ -1382,7 +2078,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                     ) : (
                                         <div className="message received" key={message.id}>
                                             {message.sender.profile_url ? (
-                                                <img src={message.sender.profile_url} className="avatar" />
+                                                <img loading="lazy" src={resolveUrl(message.sender.profile_url)} className="avatar" />
                                             ) : (
                                                 <PersonCircle size={35} />
                                             )}
@@ -1432,7 +2128,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                                                         key={media.id || mediaUrl}
                                                                         onClick={() => openFullscreenImage(mediaUrl)}
                                                                     >
-                                                                        <img src={mediaUrl} alt="attachment" className="message-media-preview" />
+                                                                        <img loading="lazy" src={resolveUrl(mediaUrl)} alt="attachment" className="message-media-preview" />
                                                                     </button>
                                                                 );
                                                             }
@@ -1445,7 +2141,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                                                         onClick={() => openFullscreenVideo(mediaUrl)}
                                                                     >
                                                                         <video className="message-media-preview" muted>
-                                                                            <source src={mediaUrl} />
+                                                                            <source src={resolveUrl(mediaUrl)} />
                                                                         </video>
                                                                     </button>
                                                                 );
@@ -1458,7 +2154,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                                                     key={media.id || mediaUrl}
                                                                     className="message-media-file"
                                                                 >
-                                                                    {mediaUrl.split("/").pop()}
+                                                                    {getMediaDisplayName(media, mediaUrl)}
                                                                 </a>
                                                             );
                                                         })}
@@ -1530,8 +2226,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                                 <div className="attachment-item" key={item.id}>
                                                     <div className="attachment-preview-wrap">
                                                         {item.kind === "image" && item.previewUrl ? (
-                                                            <img
-                                                                src={item.previewUrl}
+                                                            <img loading="lazy" src={item.previewUrl}
                                                                 alt={item.file.name}
                                                                 className="attachment-preview"
                                                             />
