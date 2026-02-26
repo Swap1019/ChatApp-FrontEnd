@@ -8,7 +8,16 @@ import "../styles/Home.css";
 import "../styles/Base.css";
 import api from "../api"; 
 
-function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
+function HomeComponent({
+    user,
+    conversations,
+    messages,
+    uuid,
+    UserUpdateSubmit,
+    hasMoreMessages = false,
+    isLoadingOlderMessages = false,
+    loadOlderMessages = async () => {},
+}) {
     const [content, setContent] = useState("");
     const [searchUsers, setSearchUsers] = useState("");
     const [searchResults, setsearchResults] = useState([]);
@@ -24,8 +33,6 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
     const [selectedGroupMembers, setSelectedGroupMembers] = useState([]);
     const [isGroupSubmitting, setIsGroupSubmitting] = useState(false);
     const [currentConversationIsGroup, setCurrentConversationIsGroup] = useState([]);
-    const [socket, setSocket] = useState("");
-    const [userSocket, setUserSocket] = useState(null);
     const [chatName, setChatName] = useState("");
     const [chatImg, setChatImg] = useState(null);
     const [members, setMembers] = useState();
@@ -38,6 +45,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
     const [bio, setBio] = useState("");
     const [userName, setUserName] = useState("");
     const [email, setEmail] = useState("");
+    const [phoneNumber, setPhoneNumber] = useState("");
     const [firstName, setFirstName] = useState("");
     const [lastName, setLastName] = useState("");
     const [backGroundImage, setBackGroundImage] = useState("");
@@ -59,6 +67,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
         messageId: null,
         offsetX: 0,
     });
+    const [keyboardOffset, setKeyboardOffset] = useState(0);
     
 
     const messagesEndRef = useRef(null);
@@ -74,9 +83,18 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
         pointerId: null,
         active: false,
     });
+    const chatReconnectRef = useRef({ timeoutId: null, attempts: 0 });
+    const userReconnectRef = useRef({ timeoutId: null, attempts: 0 });
     const chatSocketRef = useRef(null);
     const chatSocketRoomRef = useRef(null);
     const userSocketRef = useRef(null);
+    const messagesContainerRef = useRef(null);
+    const viewportStateRef = useRef({ baseHeight: 0 });
+    const prependingOlderMessagesRef = useRef({
+        active: false,
+        previousHeight: 0,
+    });
+    const shouldAutoScrollOnLoadRef = useRef(true);
     const navigate = useNavigate();
 
     const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
@@ -132,12 +150,13 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
     };
 
     const handleSearchUserClick = (searchedUser) => {
-        if (!userSocket || userSocket.readyState !== WebSocket.OPEN) {
+        const ws = userSocketRef.current;
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
             console.error("User websocket is not connected yet");
             return;
         }
 
-        userSocket.send(
+        ws.send(
             JSON.stringify({
                 type: "create_private_conversation",
                 user_id: searchedUser.id,
@@ -566,6 +585,58 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
         };
     };
 
+    const onTouchReplyStart = (event, message) => {
+        const touch = event.touches?.[0];
+        if (!touch) return;
+        dragStartRef.current = {
+            x: touch.clientX,
+            y: touch.clientY,
+            message,
+            pointerId: "touch",
+            active: true,
+        };
+    };
+
+    const onTouchReplyMove = (event) => {
+        if (!dragStartRef.current.active || !dragStartRef.current.message) return;
+        const touch = event.touches?.[0];
+        if (!touch) return;
+
+        const deltaX = touch.clientX - dragStartRef.current.x;
+        const deltaY = Math.abs(touch.clientY - dragStartRef.current.y);
+        if (Math.abs(deltaX) > 8 && deltaY < 70) {
+            event.preventDefault();
+        }
+
+        const leftOffset = Math.min(0, Math.max(deltaX, -90));
+        setDragVisual({
+            messageId: dragStartRef.current.message.id,
+            offsetX: leftOffset,
+        });
+    };
+
+    const onTouchReplyEnd = (event) => {
+        if (!dragStartRef.current.active || !dragStartRef.current.message) return;
+        const touch = event.changedTouches?.[0];
+        if (!touch) return;
+
+        const deltaX = dragStartRef.current.x - touch.clientX;
+        const deltaY = Math.abs(dragStartRef.current.y - touch.clientY);
+
+        if (deltaX > 60 && deltaY < 70) {
+            startReply(dragStartRef.current.message);
+        }
+
+        setDragVisual({ messageId: null, offsetX: 0 });
+        dragStartRef.current = {
+            x: 0,
+            y: 0,
+            message: null,
+            pointerId: null,
+            active: false,
+        };
+    };
+
     function openChat() {
         if (window.innerWidth <= 768) {
             document.getElementById('chatContent').classList.add('show');
@@ -580,8 +651,61 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
         }
     }
 
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const isChatOpen = () => {
+        if (window.innerWidth > 768) return false;
+        const chatContent = document.getElementById("chatContent");
+        return !!chatContent?.classList.contains("show");
+    };
+
+    const closeTopBootstrapModal = () => {
+        const modalNodes = Array.from(document.querySelectorAll(".modal.show"));
+        if (!modalNodes.length || !window.bootstrap?.Modal) return false;
+        const topModal = modalNodes[modalNodes.length - 1];
+        const instance =
+            window.bootstrap.Modal.getInstance(topModal) ||
+            new window.bootstrap.Modal(topModal);
+        instance.hide();
+        return true;
+    };
+
+    const handleAndroidBack = () => {
+        if (attachmentModalOpen) {
+            closeAttachmentModal();
+            return true;
+        }
+        if (fullscreenImageUrl) {
+            closeFullscreenImage();
+            return true;
+        }
+        if (fullscreenVideoUrl) {
+            closeFullscreenVideo();
+            return true;
+        }
+        if (closeTopBootstrapModal()) {
+            return true;
+        }
+        if (isChatOpen()) {
+            backToChats();
+            return true;
+        }
+        return false;
+    };
+
+    const scrollToBottom = (behavior = "smooth") => {
+        messagesEndRef.current?.scrollIntoView({ behavior });
+    };
+
+    const onMessagesScroll = async (event) => {
+        const container = event.currentTarget;
+        if (!container) return;
+        if (!hasMoreMessages || isLoadingOlderMessages) return;
+        if (container.scrollTop > 60) return;
+
+        prependingOlderMessagesRef.current = {
+            active: true,
+            previousHeight: container.scrollHeight,
+        };
+        await loadOlderMessages();
     };
 
     const getmembers = async () => {
@@ -818,22 +942,27 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
             return false;
         }
 
-        if (socket && socket.readyState === WebSocket.OPEN) {
-            const payload = { text };
+        const ws = chatSocketRef.current;
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            const clientMessageId =
+                window.crypto?.randomUUID?.() ||
+                `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+            const payload = {
+                text,
+                client_message_id: clientMessageId,
+            };
             if (replyingTo?.id) {
                 payload.reply_to = replyingTo.id;
             }
             if (attachments.length) {
                 payload.attachments = attachments;
             }
-            socket.send(JSON.stringify(payload));
+            ws.send(JSON.stringify(payload));
             lastSentRef.current = { text, ts: now };
             setReplyingTo(null);
 
-            const textarea = document.querySelector("textarea");
-            if (textarea) {
-                textarea.focus();
-            }
+            textareaRef.current?.focus();
             return true;
         }
 
@@ -859,6 +988,7 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
         setProfilePreview(resolveUrl(user.profile_url || ""));
         setUserName(user.username || "");
         setEmail(user.email || "");
+        setPhoneNumber(user.phone_number || "");
         setNickName(user.nickname || "");
         setFirstName(user.first_name || "");
         setLastName(user.last_name || "");
@@ -871,10 +1001,6 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
 
 
     useEffect(() => {
-        scrollToBottom();
-    }, [messages]);
-
-    useEffect(() => {
         const closeReplyMenu = () => {
             setReplyMenu((prev) => (prev.visible ? { ...prev, visible: false } : prev));
         };
@@ -884,8 +1010,91 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
     }, []);
 
     useEffect(() => {
+        const onPopState = () => {
+            if (handleAndroidBack()) {
+                window.history.pushState({ app: "chat" }, "");
+            }
+        };
+
+        window.history.pushState({ app: "chat" }, "");
+        window.addEventListener("popstate", onPopState);
+        return () => {
+            window.removeEventListener("popstate", onPopState);
+        };
+    }, [attachmentModalOpen, fullscreenImageUrl, fullscreenVideoUrl]);
+
+    useEffect(() => {
+        const root = document.documentElement;
+        const getViewportHeight = () => {
+            if (window.visualViewport?.height) return window.visualViewport.height;
+            return window.innerHeight;
+        };
+
+        const isTextInputFocused = () => {
+            const active = document.activeElement;
+            if (!active) return false;
+            if (active === textareaRef.current) return true;
+            const tag = active.tagName;
+            if (tag === "TEXTAREA") return true;
+            if (tag !== "INPUT") return false;
+            const input = active;
+            const type = (input.type || "").toLowerCase();
+            return ["text", "search", "email", "url", "tel", "password", ""].includes(type);
+        };
+
+        const setAppHeight = (height) => {
+            root.style.setProperty("--app-height", `${Math.round(height)}px`);
+        };
+
+        const updateViewportVars = () => {
+            const currentHeight = getViewportHeight();
+            const state = viewportStateRef.current;
+            const focused = isTextInputFocused();
+            const keyboardDelta = Math.max(0, Math.round(state.baseHeight - currentHeight));
+            const nextKeyboardOffset = focused && keyboardDelta > 20 ? keyboardDelta : 0;
+            setKeyboardOffset(nextKeyboardOffset);
+
+            if (!focused || nextKeyboardOffset === 0) {
+                state.baseHeight = currentHeight;
+                setAppHeight(currentHeight);
+            }
+        };
+
+        viewportStateRef.current.baseHeight = getViewportHeight();
+        setAppHeight(viewportStateRef.current.baseHeight);
+        updateViewportVars();
+
+        const handleFocusIn = () => {
+            updateViewportVars();
+            requestAnimationFrame(updateViewportVars);
+        };
+
+        const handleFocusOut = () => {
+            setKeyboardOffset(0);
+            requestAnimationFrame(updateViewportVars);
+        };
+
+        window.addEventListener("resize", updateViewportVars);
+        window.addEventListener("focusin", handleFocusIn);
+        window.addEventListener("focusout", handleFocusOut);
+        window.visualViewport?.addEventListener("resize", updateViewportVars);
+
+        return () => {
+            window.removeEventListener("resize", updateViewportVars);
+            window.removeEventListener("focusin", handleFocusIn);
+            window.removeEventListener("focusout", handleFocusOut);
+            window.visualViewport?.removeEventListener("resize", updateViewportVars);
+            setKeyboardOffset(0);
+        };
+    }, []);
+
+    useEffect(() => {
         setReplyMenu({ visible: false, x: 0, y: 0, messageId: null });
         setReplyingTo(null);
+    }, [uuid]);
+
+    useEffect(() => {
+        shouldAutoScrollOnLoadRef.current = true;
     }, [uuid]);
 
     useEffect(() => {
@@ -909,19 +1118,33 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
         setLiveMessage(messages || [])
     }, [messages]);
 
+    useEffect(() => {
+        const state = prependingOlderMessagesRef.current;
+        const container = messagesContainerRef.current;
+        if (!state.active || !container) return;
+
+        const delta = container.scrollHeight - state.previousHeight;
+        container.scrollTop = Math.max(0, delta);
+        prependingOlderMessagesRef.current = {
+            active: false,
+            previousHeight: 0,
+        };
+    }, [liveMessage]);
+
     useEffect(() =>{
         setLiveConversations(conversations || [])
     }, [conversations]);
 
     useEffect(() => {
-        if (!uuid || !userSocket) return;
-        if (userSocket.readyState !== WebSocket.OPEN) return;
+        if (!uuid) return;
         markConversationRead(uuid);
-    }, [uuid, userSocket]);
+    }, [uuid]);
 
 
     useEffect(() => {
         if (!uuid) return;
+
+        let shouldReconnect = true;
 
         const current = chatSocketRef.current;
         if (
@@ -940,6 +1163,12 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
         }
 
         const token = localStorage.getItem("access");
+        if (chatReconnectRef.current.timeoutId) {
+            clearTimeout(chatReconnectRef.current.timeoutId);
+            chatReconnectRef.current.timeoutId = null;
+        }
+        chatReconnectRef.current.attempts = 0;
+
         const ws = new WebSocket(wsBaseUrl + "/chat/" + uuid + "/?token=" + token);
         chatSocketRef.current = ws;
         chatSocketRoomRef.current = uuid;
@@ -965,18 +1194,38 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
             }
         };
 
+        ws.onerror = (err) => {
+            console.error("Websocket error", err);
+        };
+
         ws.onclose = () => {
             console.log("Websocket closed");
             if (chatSocketRef.current === ws) {
                 chatSocketRef.current = null;
                 chatSocketRoomRef.current = null;
             }
+            if (!shouldReconnect || !uuid || chatSocketRoomRef.current !== null) return;
+            if (chatReconnectRef.current.timeoutId) return;
+            const attempts = chatReconnectRef.current.attempts + 1;
+            chatReconnectRef.current.attempts = attempts;
+            const delay = Math.min(10000, 1000 * 2 ** Math.min(attempts, 4));
+            chatReconnectRef.current.timeoutId = setTimeout(() => {
+                chatReconnectRef.current.timeoutId = null;
+                if (chatSocketRef.current || !uuid) return;
+                const retryToken = localStorage.getItem("access");
+                const retryWs = new WebSocket(wsBaseUrl + "/chat/" + uuid + "/?token=" + retryToken);
+                chatSocketRef.current = retryWs;
+                chatSocketRoomRef.current = uuid;
+            }, delay);
         };
 
-        setSocket(ws);
-
         return () => {
+            shouldReconnect = false;
             clearInterval(pingInterval);
+            if (chatReconnectRef.current.timeoutId) {
+                clearTimeout(chatReconnectRef.current.timeoutId);
+                chatReconnectRef.current.timeoutId = null;
+            }
             if (chatSocketRef.current === ws) {
                 chatSocketRef.current = null;
                 chatSocketRoomRef.current = null;
@@ -988,6 +1237,8 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
 
     useEffect(() => {
     if (!user) return;
+
+    let shouldReconnect = true;
 
     const current = userSocketRef.current;
     if (
@@ -1004,6 +1255,12 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
     }
 
     const token = localStorage.getItem("access");
+    if (userReconnectRef.current.timeoutId) {
+        clearTimeout(userReconnectRef.current.timeoutId);
+        userReconnectRef.current.timeoutId = null;
+    }
+    userReconnectRef.current.attempts = 0;
+
     const ws = new WebSocket(wsBaseUrl + "/ws/user/?token=" + token);
     userSocketRef.current = ws;
 
@@ -1015,7 +1272,9 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
 
     ws.onopen = () => {
         console.log("User-specific WebSocket connected");
-        setUserSocket(ws);
+        if (uuid) {
+            markConversationRead(uuid);
+        }
     };
 
     ws.onmessage = (event) => {
@@ -1079,25 +1338,60 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
         }
     };
 
+    ws.onerror = (err) => {
+        console.error("User websocket error", err);
+    };
+
     ws.onclose = () => {
         console.log("User-specific WebSocket disconnected");
         if (userSocketRef.current === ws) {
             userSocketRef.current = null;
         }
-        setUserSocket(null);
+        if (!shouldReconnect || userReconnectRef.current.timeoutId) return;
+        const attempts = userReconnectRef.current.attempts + 1;
+        userReconnectRef.current.attempts = attempts;
+        const delay = Math.min(10000, 1000 * 2 ** Math.min(attempts, 4));
+        userReconnectRef.current.timeoutId = setTimeout(() => {
+            userReconnectRef.current.timeoutId = null;
+            if (userSocketRef.current || !user) return;
+            const retryToken = localStorage.getItem("access");
+            const retryWs = new WebSocket(wsBaseUrl + "/ws/user/?token=" + retryToken);
+            userSocketRef.current = retryWs;
+        }, delay);
     };
 
     return () => {
+        shouldReconnect = false;
         clearInterval(pingInterval);
+        if (userReconnectRef.current.timeoutId) {
+            clearTimeout(userReconnectRef.current.timeoutId);
+            userReconnectRef.current.timeoutId = null;
+        }
         if (userSocketRef.current === ws) {
             userSocketRef.current = null;
         }
-        setUserSocket(null);
         ws.close();
     };
-    }, [user?.id, navigate, wsBaseUrl]);
+    }, [user?.id, navigate, wsBaseUrl, uuid]);
     useEffect(() => {
-        scrollToBottom();
+        if (prependingOlderMessagesRef.current.active) return;
+
+        if (shouldAutoScrollOnLoadRef.current) {
+            shouldAutoScrollOnLoadRef.current = false;
+            scrollToBottom("auto");
+            return;
+        }
+
+        const container = messagesContainerRef.current;
+        if (!container) {
+            scrollToBottom();
+            return;
+        }
+        const distanceFromBottom =
+            container.scrollHeight - container.scrollTop - container.clientHeight;
+        if (distanceFromBottom < 160) {
+            scrollToBottom();
+        }
     }, [liveMessage]);
 
     return (
@@ -1641,6 +1935,16 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                                 </p>
                                                 <input
                                                     type="text"
+                                                    value={phoneNumber}
+                                                    className="input-style theme-light-gray text-muted"
+                                                    placeholder="Email"
+                                                    disabled
+                                                />
+                                                <p className="fw-ligher text-secondary">
+                                                    phone number
+                                                </p>  
+                                                <input
+                                                    type="text"
                                                     value={firstName}
                                                     className="input-style theme-lighter-gray"
                                                     onChange={(e) => setFirstName(e.target.value)}
@@ -1925,7 +2229,14 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                         </div>
 
                         {/* Chat content */}
-                        <div className="chat-content" id="chatContent" style={{ backgroundImage: `url(${user?.background_image_url ? resolveUrl(user.background_image_url) : "https://res.cloudinary.com/dwfngrwoe/image/upload/v1758392790/default_hgh8gm.webp"})`}}>
+                        <div
+                            className="chat-content"
+                            id="chatContent"
+                            style={{
+                                backgroundImage: `url(${user?.background_image_url ? resolveUrl(user.background_image_url) : "https://res.cloudinary.com/dwfngrwoe/image/upload/v1758392790/default_hgh8gm.webp"})`,
+                                "--keyboard-offset": `${keyboardOffset}px`,
+                            }}
+                        >
                             {chatName ? 
                             <div className="chat-header">
                                 {/* Group modal button */}
@@ -1968,7 +2279,12 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                             :
                             <div/>
                             }
-                            <div className="messages">
+                            <div className="messages" ref={messagesContainerRef} onScroll={onMessagesScroll}>
+                                {isLoadingOlderMessages ? (
+                                    <div className="text-center text-secondary small py-2">
+                                        Loading older messages...
+                                    </div>
+                                ) : null}
                                 {liveMessage?.map((message) => {
                                     const replyTarget = resolveReplyTarget(message);
                                     const isMyMessage = user.id === message.sender.id;
@@ -1997,6 +2313,10 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                                 onPointerMove={onDragReplyMove}
                                                 onPointerUp={onDragReplyEnd}
                                                 onPointerCancel={onDragReplyCancel}
+                                                onTouchStart={(e) => onTouchReplyStart(e, message)}
+                                                onTouchMove={onTouchReplyMove}
+                                                onTouchEnd={onTouchReplyEnd}
+                                                onTouchCancel={onDragReplyCancel}
                                             >
                                                     {replyTarget && (
                                                         <div className="reply-preview">
@@ -2093,6 +2413,10 @@ function HomeComponent({user,conversations,messages,uuid,UserUpdateSubmit}) {
                                                 onPointerMove={onDragReplyMove}
                                                 onPointerUp={onDragReplyEnd}
                                                 onPointerCancel={onDragReplyCancel}
+                                                onTouchStart={(e) => onTouchReplyStart(e, message)}
+                                                onTouchMove={onTouchReplyMove}
+                                                onTouchEnd={onTouchReplyEnd}
+                                                onTouchCancel={onDragReplyCancel}
                                             >
                                                 {replyTarget && (
                                                     <div className="reply-preview">

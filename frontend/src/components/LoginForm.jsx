@@ -7,7 +7,7 @@ import LoadingIndicator from "./LoadingIndicator";
 import { Eye, EyeSlash } from "react-bootstrap-icons";
 
 function Form({ route, method }) {
-    const [username, setUsername] = useState("");
+    const [identifier, setIdentifier] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -18,7 +18,7 @@ function Form({ route, method }) {
         e.preventDefault();
 
         try {
-            const res = await api.post(route, { username, password })
+            const res = await api.post(route, { username: identifier, password })
             localStorage.setItem(ACCESS_TOKEN, res.data.access);
             localStorage.setItem(REFRESH_TOKEN, res.data.refresh);
             navigate("/")
@@ -34,12 +34,13 @@ function Form({ route, method }) {
             <h2>Login</h2>
             <form id="multiStepForm" onSubmit={handleSubmit}>
                 <div className="form-group">
-                    <label htmlFor="username">Username</label>
+                    <label htmlFor="identifier">Username or Phone Number</label>
                     <input 
                         type="text"
-                        value={username}
-                        onChange={(e) => setUsername(e.target.value)} 
-                        id="username" 
+                        value={identifier}
+                        onChange={(e) => setIdentifier(e.target.value)} 
+                        id="identifier"
+                        placeholder="username or +98..."
                         required
                     />
                 </div>

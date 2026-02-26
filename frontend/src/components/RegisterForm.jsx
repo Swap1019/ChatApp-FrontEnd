@@ -5,11 +5,14 @@ import api from "../api";
 import "../styles/Form.css";
 import LoadingIndicator from "../components/LoadingIndicator";
 import { Eye, EyeSlash } from "react-bootstrap-icons";
+import PhoneInput from "react-phone-number-input";
+import "react-phone-number-input/style.css";
 
 function Register() {
     const [userName, setUserName] = useState("");
     const [nickName, setNickName] = useState("");
     const [email, setEmail] = useState("");
+    const [phoneNumber, setPhoneNumber] = useState("");
     const [firstName, setFirstName] = useState("");
     const [lastName, setLastName] = useState("");
     const [password, setPassword] = useState("");
@@ -38,13 +41,18 @@ function Register() {
             alert("Passwords do not match");
             return;
         }
+        if (!phoneNumber) {
+            alert("Phone number is required");
+            return;
+        }
 
         setLoading(true);
         try {
             const res = await api.post("user/register/", {
                 username: userName,
                 nickname: nickName,
-                email: email,
+                email: email || null,
+                phone_number: phoneNumber,
                 first_name : firstName,
                 last_name: lastName,
                 password: password,
@@ -132,11 +140,20 @@ function Register() {
                     <div className="form-group">
                         <label htmlFor="email">Email</label>
                         <input 
-                            type="text"
+                            type="email"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)} 
                             id="email" 
-                            required
+                            placeholder="Optional"
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label htmlFor="phoneNumber">Phone Number</label>
+                        <PhoneInput
+                        international
+                        defaultCountry="IR" // or your default
+                        value={phoneNumber}
+                        onChange={setPhoneNumber}
                         />
                     </div>
                     <div className="form-group" style={{ position: "relative" }}>

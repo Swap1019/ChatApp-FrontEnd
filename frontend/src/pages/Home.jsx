@@ -13,6 +13,11 @@ function Home() {
     const [isSuccess, setIsSuccess] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [messages, setMessages] = useState();
+    const [messagesPagination, setMessagesPagination] = useState({
+        hasMore: false,
+        nextPage: null,
+        isLoading: false,
+    });
     const { uuid } = useParams();
 
     useEffect(() => {
@@ -20,8 +25,8 @@ function Home() {
     }, []);
 
     useEffect(() => {
-        fetchmessages(); 
-    }, [uuid]);
+        fetchmessages(1, false); 
+    }, [uuid, user?.id]);
 
     const mediaBaseUrl = (import.meta.env.VITE_MEDIA_BASE_URL || "").replace(/\/+$/, "");
 
@@ -152,20 +157,55 @@ function Home() {
             }
     };
 
-    const fetchmessages = async () => {
-        if (uuid && user) {
-            await api
-                .get(`/chat/${uuid}/`)
-                .then((res) => res.data)
-                .then((data) => {
-                    setMessages(data.messages)
-                })
-                .catch((err) => alert(err));
+    const fetchmessages = async (page = 1, appendOlder = false) => {
+        if (!uuid || !user) return;
+        if (messagesPagination.isLoading) return;
+
+        setMessagesPagination((prev) => ({ ...prev, isLoading: true }));
+        try {
+            const { data } = await api.get(`/chat/${uuid}/?page=${page}`);
+            const incoming = Array.isArray(data?.messages) ? data.messages : [];
+            const pagination = data?.pagination || {};
+
+            setMessages((prev) => {
+                if (!appendOlder || !Array.isArray(prev)) {
+                    return incoming;
+                }
+                const seen = new Set(prev.map((msg) => String(msg.id)));
+                const uniqueIncoming = incoming.filter((msg) => !seen.has(String(msg.id)));
+                return [...uniqueIncoming, ...prev];
+            });
+
+            setMessagesPagination({
+                hasMore: Boolean(pagination.has_more),
+                nextPage: pagination.next_page || null,
+                isLoading: false,
+            });
+        } catch (err) {
+            setMessagesPagination((prev) => ({ ...prev, isLoading: false }));
+            alert(err);
         }
-    }
+    };
+
+    const loadOlderMessages = async () => {
+        if (!messagesPagination.hasMore || !messagesPagination.nextPage) return;
+        await fetchmessages(messagesPagination.nextPage, true);
+    };
 
     return (
-        <HomeComponent user={user} conversations={conversations} conversationIds={conversationIds} messages={messages} uuid={uuid} UserUpdateSubmit={UserUpdateSubmit} uploadProgress={uploadProgress} uploadIsSuccess={isSuccess} /> 
+        <HomeComponent
+            user={user}
+            conversations={conversations}
+            conversationIds={conversationIds}
+            messages={messages}
+            uuid={uuid}
+            UserUpdateSubmit={UserUpdateSubmit}
+            uploadProgress={uploadProgress}
+            uploadIsSuccess={isSuccess}
+            hasMoreMessages={messagesPagination.hasMore}
+            isLoadingOlderMessages={messagesPagination.isLoading}
+            loadOlderMessages={loadOlderMessages}
+        /> 
     );
 }
 

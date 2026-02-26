@@ -1,0 +1,23 @@
+{
+  "name": "ChatApp",
+  "short_name": "ChatApp",
+  "description": "Chat application",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#1b1d20",
+  "theme_color": "#1b1d20",
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/vite.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
